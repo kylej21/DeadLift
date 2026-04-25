@@ -2,16 +2,20 @@
 Define all MCP tools for LQL, Graphrag and Bigquery 
 """
 
-import os 
-from dotenv import load_dotenv 
-from fastmcp import FastMCP 
-from google.cloud import logging as gcp_logging 
+import os
+import subprocess
+from dotenv import load_dotenv
+from fastmcp import FastMCP
+from google.cloud import logging as gcp_logging
 
 load_dotenv() 
 
 mcp = FastMCP() 
 
 log_client = gcp_logging.Client()
+
+# graph rag root directory, subject to change based on where the graph rag lives 
+GRAPH_RAG_ROOT = os.path.join(os.path.dirname(__file__), "graph_rag_workspace")
 
 @mcp.tool()
 def fetch_gcp_logs(
@@ -77,11 +81,50 @@ def gcp_list_log_resource_types() -> list[str]:
         "gcs_bucket",
     ]
 
-@mcp.tool() 
-def tool3(): pass 
+@mcp.tool()
+def graph_rag_query(
+    query: str,
+    method: str = "local",
+    response_type: str = "Multiple Paragraphs",
+    community_level: int = 2,
+) -> dict:
+    """
+    Query the GraphRAG knowledge graph built from the codebase/incident data.
+    Use method='local' or 'drift' for specific entity/error questions (best for dead letter diagnosis).
+    Use method='global' for broad questions about the whole dataset.
+    """
+    cmd = [
+        "graphrag", "query",
+        "--root", GRAPH_RAG_ROOT,
+        "--method", method,
+        "--response-type", response_type,
+        "--community-level", str(community_level),
+        query,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+    if result.returncode != 0:
+        return {
+            "success": False,
+            "error": result.stderr.strip() or "graphrag query failed with no stderr output",
+        }
+
+    return {
+        "success": True,
+        "method": method,
+        "response": result.stdout.strip(),
+    }
 
 @mcp.tool()
-def tool4(): pass
+def bigquery_query(): 
+    """ 
+    Recent window or one successful message. 
+    """
+    # ingestor will feed bad message into LLM and it'll use bigquery 
+    # to query for recent window of one or more successful messages 
+    
+    pass
 
 if __name__ == "__main__":
     mcp.run() 
