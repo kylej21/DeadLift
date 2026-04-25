@@ -6,6 +6,11 @@ on:
     paths:
       - "client/**"
       - ".github/workflows/deploy-client.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "client/**"
+      - ".github/workflows/deploy-client.yml"
 
 env:
   REGION: us-central1

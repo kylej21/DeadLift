@@ -27,7 +27,6 @@ func generateState() (string, error) {
 }
 
 func handleConnect(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", clientURL)
 	w.Header().Set("Content-Type", "application/json")
 
 	var req struct {
