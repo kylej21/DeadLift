@@ -59,8 +59,14 @@ const Dashboard = () => {
 
 // ====== FIXES TAB ======
 const FixesTab = ({ fixes, setFixes }) => {
-  if (fixes === null) return <LoadingState />;
-  if (fixes.length === 0) return <EmptyState title="No DLQ messages yet" desc="Once DeadLift detects failed messages, proposed fixes will appear here." />;
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    const fresh = await window.api.getFixes();
+    setFixes(fresh);
+    setRefreshing(false);
+  };
 
   const handleApprove = async (id) => {
     await window.api.approveFix(id);
@@ -71,9 +77,20 @@ const FixesTab = ({ fixes, setFixes }) => {
     setFixes(prev => prev.map(f => f.id === id ? { ...f, status: 'denied' } : f));
   };
 
-  return (
+  const inner = fixes === null ? <LoadingState /> :
+    fixes.length === 0 ? <EmptyState title="No DLQ messages yet" desc="Once DeadLift detects failed messages, proposed fixes will appear here." /> :
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {fixes.map(fix => <FixCard key={fix.id} fix={fix} onApprove={handleApprove} onDeny={handleDeny} />)}
+    </div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button className="btn btn-sm" onClick={refresh} disabled={refreshing}>
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+      {inner}
     </div>
   );
 };
