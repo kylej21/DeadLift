@@ -81,7 +81,7 @@ func updateTaskStatus(ctx context.Context, taskID, status string) error {
 }
 
 func listTasksByOrg(ctx context.Context, orgID string) ([]Task, error) {
-	docs, err := fsClient.Collection("tasks").Where("org_id", "==", orgID).OrderBy("created_at", firestore.Desc).Documents(ctx).GetAll()
+	docs, err := fsClient.Collection("tasks").Where("org_id", "==", orgID).Documents(ctx).GetAll()
 	if err != nil {
 		return nil, fmt.Errorf("list tasks: %w", err)
 	}
@@ -90,6 +90,14 @@ func listTasksByOrg(ctx context.Context, orgID string) ([]Task, error) {
 		var t Task
 		if err := doc.DataTo(&t); err == nil {
 			tasks = append(tasks, t)
+		}
+	}
+	// Sort newest first in Go to avoid needing a composite Firestore index.
+	for i := 0; i < len(tasks)-1; i++ {
+		for j := i + 1; j < len(tasks); j++ {
+			if tasks[j].CreatedAt.After(tasks[i].CreatedAt) {
+				tasks[i], tasks[j] = tasks[j], tasks[i]
+			}
 		}
 	}
 	return tasks, nil

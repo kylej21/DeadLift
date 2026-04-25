@@ -134,7 +134,10 @@ window.api.getFixes = async () => {
   const orgId = window.session.orgId;
   if (!orgId) return [];
   const res = await fetch(`${PROXY_URL}/api/tasks?org_id=${orgId}`);
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`tasks fetch failed ${res.status}: ${body}`);
+  }
   const tasks = await res.json();
   return (tasks || []).map(__taskToFix);
 };

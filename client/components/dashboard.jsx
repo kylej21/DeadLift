@@ -2,6 +2,8 @@
 // Dashboard — shell, Fixes tab, Batches tab
 // ============================================================
 
+const __emptyAnalyticsState = { kpis: { dlqVolume24h: 0, autoFixed: 0, awaitingApproval: 0, unfixable: 0, mttrBefore: '—', mttrAfter: '—', mttrDelta: 0, estSavings30d: 0 }, series: Array.from({ length: 24 }, (_, i) => ({ hour: i, dlq: 0, fixed: 0, awaiting: 0, unfixable: 0 })), categories: [], topics: [] };
+
 const TABS = [
   { key: 'fixes', label: 'Fixes' },
   { key: 'batches', label: 'Batches' },
@@ -22,10 +24,10 @@ const Dashboard = () => {
   React.useEffect(() => {
     if (viewState === 'empty') { setFixes([]); setBatches([]); setAnalytics(null); setRca([]); return; }
     if (viewState === 'loading') { setFixes(null); setBatches(null); setAnalytics(null); setRca(null); return; }
-    window.api.getFixes().then(setFixes);
-    window.api.getBatches().then(setBatches);
-    window.api.getAnalytics().then(setAnalytics);
-    window.api.getRCAReports().then(setRca);
+    window.api.getFixes().then(setFixes).catch(e => setFixes({ __error: e.message }));
+    window.api.getBatches().then(setBatches).catch(() => setBatches([]));
+    window.api.getAnalytics().then(setAnalytics).catch(() => setAnalytics(__emptyAnalyticsState));
+    window.api.getRCAReports().then(setRca).catch(() => setRca([]));
   }, [viewState]);
 
   const pendingCount = fixes ? fixes.filter(f => f.status === 'pending').length : 0;
@@ -60,11 +62,17 @@ const Dashboard = () => {
 // ====== FIXES TAB ======
 const FixesTab = ({ fixes, setFixes }) => {
   const [refreshing, setRefreshing] = React.useState(false);
+  const [error, setError] = React.useState(null);
 
   const refresh = async () => {
     setRefreshing(true);
-    const fresh = await window.api.getFixes();
-    setFixes(fresh);
+    setError(null);
+    try {
+      const fresh = await window.api.getFixes();
+      setFixes(fresh);
+    } catch (e) {
+      setError(e.message);
+    }
     setRefreshing(false);
   };
 
@@ -77,11 +85,14 @@ const FixesTab = ({ fixes, setFixes }) => {
     setFixes(prev => prev.map(f => f.id === id ? { ...f, status: 'denied' } : f));
   };
 
+  const loadError = fixes && fixes.__error;
   const inner = fixes === null ? <LoadingState /> :
+    loadError ? null :
     fixes.length === 0 ? <EmptyState title="No DLQ messages yet" desc="Once DeadLift detects failed messages, proposed fixes will appear here." /> :
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {fixes.map(fix => <FixCard key={fix.id} fix={fix} onApprove={handleApprove} onDeny={handleDeny} />)}
     </div>;
+  const displayError = error || loadError;
 
   return (
     <div>
@@ -90,6 +101,11 @@ const FixesTab = ({ fixes, setFixes }) => {
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>
+      {displayError && (
+        <div style={{ background: 'var(--red-bg)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '10px 14px', marginBottom: 12 }}>
+          <code className="mono" style={{ fontSize: 12, color: 'var(--red)' }}>{displayError}</code>
+        </div>
+      )}
       {inner}
     </div>
   );
@@ -156,8 +172,10 @@ const FixCard = ({ fix, onApprove, onDeny }) => {
           {fix.status === 'pending' && (
             <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn btn-sm" onClick={() => onDeny(fix.id)}>Deny</button>
-              <button className="btn btn-sm">Edit fix</button>
-              <button className="btn btn-sm btn-green" onClick={() => onApprove(fix.id)}>
+              <button className="btn btn-sm btn-green"
+                disabled={!fix.after || !fix.after.trim()}
+                title={!fix.after || !fix.after.trim() ? 'Waiting for AI repair proposal' : undefined}
+                onClick={() => onApprove(fix.id)}>
                 {fix.batch ? `Approve all ${fix.batch.count}` : 'Approve & republish'}
               </button>
             </div>
