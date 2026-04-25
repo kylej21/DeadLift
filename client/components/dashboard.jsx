@@ -12,25 +12,40 @@ const TABS = [
   { key: 'settings', label: 'Settings' },
 ];
 
+const __fixesToAnalytics = (fixes) => {
+  const list = Array.isArray(fixes) ? fixes : [];
+  const total = list.length;
+  const approved = list.filter(f => f.status === 'fixed').length;
+  const pending = list.filter(f => f.status === 'pending').length;
+  const denied = list.filter(f => f.status === 'denied').length;
+  return {
+    kpis: { dlqVolume24h: total, autoFixed: approved, awaitingApproval: pending, unfixable: denied, mttrBefore: '—', mttrAfter: '—', mttrDelta: 0, estSavings30d: 0 },
+    series: Array.from({ length: 24 }, (_, i) => ({ hour: i, dlq: 0, fixed: 0, awaiting: 0, unfixable: 0 })),
+    categories: [],
+    topics: [],
+  };
+};
+
 const Dashboard = () => {
   const tweaks = window.__tweakState || {};
   const viewState = tweaks.dashboardState || 'populated'; // empty | loading | populated
   const [tab, setTab] = React.useState('fixes');
   const [fixes, setFixes] = React.useState(null);
   const [batches, setBatches] = React.useState(null);
-  const [analytics, setAnalytics] = React.useState(null);
   const [rca, setRca] = React.useState(null);
 
   React.useEffect(() => {
-    if (viewState === 'empty') { setFixes([]); setBatches([]); setAnalytics(null); setRca([]); return; }
-    if (viewState === 'loading') { setFixes(null); setBatches(null); setAnalytics(null); setRca(null); return; }
+    if (viewState === 'empty') { setFixes([]); setBatches([]); setRca([]); return; }
+    if (viewState === 'loading') { setFixes(null); setBatches(null); setRca(null); return; }
     window.api.getFixes().then(setFixes).catch(e => setFixes({ __error: e.message }));
     window.api.getBatches().then(setBatches).catch(() => setBatches([]));
-    window.api.getAnalytics().then(setAnalytics).catch(() => setAnalytics(__emptyAnalyticsState));
     window.api.getRCAReports().then(setRca).catch(() => setRca([]));
   }, [viewState]);
 
-  const pendingCount = fixes ? fixes.filter(f => f.status === 'pending').length : 0;
+  // Analytics derived from fixes — always in sync, no separate fetch needed.
+  const analytics = Array.isArray(fixes) ? __fixesToAnalytics(fixes) : null;
+
+  const pendingCount = Array.isArray(fixes) ? fixes.filter(f => f.status === 'pending').length : 0;
   const batchPending = batches ? batches.filter(b => b.status === 'pending').length : 0;
 
   return (
