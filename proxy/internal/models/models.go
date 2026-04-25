@@ -1,4 +1,4 @@
-package main
+package models
 
 import "time"
 
@@ -18,7 +18,19 @@ type User struct {
 	CreatedAt         time.Time       `firestore:"created_at"         json:"created_at"`
 }
 
-type statePayload struct {
+type Task struct {
+	TaskID       string            `firestore:"task_id"       json:"task_id"`
+	OrgID        string            `firestore:"org_id"        json:"org_id"`
+	MessageID    string            `firestore:"message_id"    json:"message_id"`
+	RawPayload   string            `firestore:"raw_payload"   json:"raw_payload"`
+	Attributes   map[string]string `firestore:"attributes"    json:"attributes"`
+	FixedPayload string            `firestore:"fixed_payload" json:"fixed_payload"`
+	Status       string            `firestore:"status"        json:"status"` // pending_approval | approved | denied | failed
+	CreatedAt    time.Time         `firestore:"created_at"    json:"created_at"`
+	UpdatedAt    time.Time         `firestore:"updated_at"    json:"updated_at"`
+}
+
+type StatePayload struct {
 	Mode              string // "onboard" | "signin"
 	OrgID             string
 	ProjectID         string
@@ -31,19 +43,17 @@ type statePayload struct {
 	WebURL            string
 }
 
-type userInfo struct {
+type UserInfo struct {
 	Sub   string `json:"sub"`
 	Email string `json:"email"`
 }
 
-type Task struct {
-	TaskID       string            `firestore:"task_id"       json:"task_id"`
-	OrgID        string            `firestore:"org_id"        json:"org_id"`
-	MessageID    string            `firestore:"message_id"    json:"message_id"`
-	RawPayload   string            `firestore:"raw_payload"   json:"raw_payload"`
-	Attributes   map[string]string `firestore:"attributes"    json:"attributes"`
-	FixedPayload string            `firestore:"fixed_payload" json:"fixed_payload"`
-	Status       string            `firestore:"status"        json:"status"`
-	CreatedAt    time.Time         `firestore:"created_at"    json:"created_at"`
-	UpdatedAt    time.Time         `firestore:"updated_at"    json:"updated_at"`
+type PubSubMessage struct {
+	AckID   string `json:"ackId"`
+	Message struct {
+		Data        string            `json:"data"`
+		Attributes  map[string]string `json:"attributes"`
+		MessageID   string            `json:"messageId"`
+		PublishTime string            `json:"publishTime"`
+	} `json:"message"`
 }

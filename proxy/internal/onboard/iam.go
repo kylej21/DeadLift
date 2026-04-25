@@ -1,4 +1,4 @@
-package main
+package onboard
 
 import (
 	"bytes"
@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"proxy/internal/models"
 )
 
 const (
@@ -27,12 +29,7 @@ type iamBinding struct {
 	Members []string `json:"members"`
 }
 
-type GrantResult struct {
-	Resource string
-	Role     string
-}
-
-func exchangeCode(code string) (string, *userInfo, error) {
+func exchangeCode(clientID, clientSecret, redirectURI, code string) (string, *models.UserInfo, error) {
 	data := url.Values{
 		"code":          {code},
 		"client_id":     {clientID},
@@ -40,13 +37,11 @@ func exchangeCode(code string) (string, *userInfo, error) {
 		"redirect_uri":  {redirectURI},
 		"grant_type":    {"authorization_code"},
 	}
-
 	resp, err := http.PostForm(googleTokenURL, data)
 	if err != nil {
 		return "", nil, err
 	}
 	defer resp.Body.Close()
-
 	body, _ := io.ReadAll(resp.Body)
 	var tr struct {
 		AccessToken string `json:"access_token"`
@@ -59,61 +54,52 @@ func exchangeCode(code string) (string, *userInfo, error) {
 	if tr.Error != "" {
 		return "", nil, fmt.Errorf("%s: %s", tr.Error, tr.ErrorDesc)
 	}
-
 	info, err := getUserInfo(tr.AccessToken)
 	if err != nil {
 		return "", nil, fmt.Errorf("get user info: %w", err)
 	}
-
 	return tr.AccessToken, info, nil
 }
 
-func getUserInfo(token string) (*userInfo, error) {
+func getUserInfo(token string) (*models.UserInfo, error) {
 	req, _ := http.NewRequest("GET", googleUserInfoURL, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
 	body, _ := io.ReadAll(resp.Body)
-	var info userInfo
+	var info models.UserInfo
 	if err := json.Unmarshal(body, &info); err != nil {
 		return nil, fmt.Errorf("parse user info: %w", err)
 	}
 	return &info, nil
 }
 
-func grantPermissions(ctx context.Context, token, projectID, dlqSubName, topicName, saEmail string) ([]GrantResult, error) {
+func grantPermissions(ctx context.Context, token, projectID, dlqSubName, topicName, saEmail string) error {
 	member := "serviceAccount:" + saEmail
-	var results []GrantResult
 
 	dlqResource := dlqSubName
 	if !strings.HasPrefix(dlqSubName, "projects/") {
 		dlqResource = fmt.Sprintf("projects/%s/subscriptions/%s", projectID, dlqSubName)
 	}
 	if err := setPubSubIAM(ctx, token, dlqResource, "roles/pubsub.subscriber", member); err != nil {
-		return nil, fmt.Errorf("DLQ subscription: %w", err)
+		return fmt.Errorf("DLQ subscription: %w", err)
 	}
-	results = append(results, GrantResult{Resource: dlqResource, Role: "roles/pubsub.subscriber"})
 
 	topicResource := topicName
 	if !strings.HasPrefix(topicName, "projects/") {
 		topicResource = fmt.Sprintf("projects/%s/topics/%s", projectID, topicName)
 	}
 	if err := setPubSubIAM(ctx, token, topicResource, "roles/pubsub.publisher", member); err != nil {
-		return nil, fmt.Errorf("main topic: %w", err)
+		return fmt.Errorf("main topic: %w", err)
 	}
-	results = append(results, GrantResult{Resource: topicResource, Role: "roles/pubsub.publisher"})
 
 	if err := setProjectIAM(ctx, token, projectID, "roles/logging.viewer", member); err != nil {
-		return nil, fmt.Errorf("project logging: %w", err)
+		return fmt.Errorf("project logging: %w", err)
 	}
-	results = append(results, GrantResult{Resource: "projects/" + projectID, Role: "roles/logging.viewer"})
-
-	return results, nil
+	return nil
 }
 
 func setPubSubIAM(ctx context.Context, token, resource, role, member string) error {
@@ -151,18 +137,15 @@ func getIAMPolicy(ctx context.Context, token, endpoint, method string) (*iamPoli
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
 	}
-
 	var policy iamPolicy
 	if err := json.Unmarshal(body, &policy); err != nil {
 		return nil, fmt.Errorf("parse policy: %w", err)
@@ -181,13 +164,11 @@ func postIAMPolicy(ctx context.Context, token, endpoint string, policy *iamPolic
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, b)
