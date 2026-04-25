@@ -1,0 +1,61 @@
+name: Deploy Proxy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "proxy/onboarding/**"
+      - ".github/workflows/deploy-proxy.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "proxy/onboarding/**"
+      - ".github/workflows/deploy-proxy.yml"
+
+env:
+  REGION: us-central1
+  REGISTRY: us-central1-docker.pkg.dev
+  REPO: deadlift
+  IMAGE: proxy
+  SERVICE: deadlift-proxy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGISTRY }} --quiet
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./proxy/onboarding
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}
