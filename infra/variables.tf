@@ -27,11 +27,6 @@ variable "google_oauth_client_secret" {
   sensitive   = true
 }
 
-variable "repair_sa_email" {
-  description = "Service account email DeadLift uses to access customer Pub/Sub resources"
-  type        = string
-}
-
 variable "proxy_client_url" {
   description = "URL of the client SPA — proxy redirects here after onboarding"
   type        = string

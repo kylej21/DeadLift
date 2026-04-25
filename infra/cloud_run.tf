@@ -39,6 +39,12 @@ resource "google_service_account" "proxy" {
   display_name = "DeadLift Proxy Service"
 }
 
+resource "google_service_account" "repair" {
+  account_id   = "deadlift-repair"
+  display_name = "DeadLift Repair SA"
+  description  = "Granted access to customer Pub/Sub resources during onboarding"
+}
+
 resource "google_project_iam_member" "proxy_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
@@ -51,6 +57,10 @@ resource "google_cloud_run_v2_service" "proxy" {
 
   template {
     service_account = google_service_account.proxy.email
+
+    scaling {
+      min_instance_count = 1
+    }
 
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
@@ -73,11 +83,15 @@ resource "google_cloud_run_v2_service" "proxy" {
       }
       env {
         name  = "REPAIR_SA_EMAIL"
-        value = var.repair_sa_email
+        value = google_service_account.repair.email
       }
       env {
         name  = "CLIENT_URL"
         value = var.proxy_client_url
+      }
+      env {
+        name  = "REDIRECT_URI"
+        value = "https://deadlift-proxy-f47qsb66lq-uc.a.run.app/api/onboard/callback"
       }
     }
   }

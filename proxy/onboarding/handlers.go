@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -36,6 +37,8 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		AutoRepublish     map[string]bool `json:"auto_republish"`
 		BatchingThreshold int             `json:"batching_threshold"`
 		NotificationEmail string          `json:"notification_email"`
+		GithubURL         string          `json:"github_url"`
+		WebURL            string          `json:"web_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -68,6 +71,8 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		AutoRepublish:     req.AutoRepublish,
 		BatchingThreshold: req.BatchingThreshold,
 		NotificationEmail: req.NotificationEmail,
+		GithubURL:         req.GithubURL,
+		WebURL:            req.WebURL,
 	})
 
 	params := url.Values{
@@ -126,6 +131,22 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set up BigQuery streaming subscription on the customer's main topic.
+	// Non-fatal — log and continue if it fails.
+	projectNumber, err := getProjectNumber(r.Context(), accessToken, payload.ProjectID)
+	if err != nil {
+		log.Printf("bigquery setup: could not get project number: %v", err)
+	} else {
+		pubsubSA := fmt.Sprintf("service-%s@gcp-sa-pubsub.iam.gserviceaccount.com", projectNumber)
+		if err := grantPubSubSABQAccess(r.Context(), pubsubSA); err != nil {
+			log.Printf("bigquery setup: grant access error: %v", err)
+		} else if err := createBQSubscription(r.Context(), accessToken, payload.ProjectID, payload.MainTopic, payload.OrgID); err != nil {
+			log.Printf("bigquery setup: create subscription error: %v", err)
+		} else {
+			log.Printf("bigquery setup: streaming subscription created for org %s", payload.OrgID)
+		}
+	}
+
 	user := User{
 		OrgID:             payload.OrgID,
 		GoogleSub:         info.Sub,
@@ -137,6 +158,8 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 		AutoRepublish:     payload.AutoRepublish,
 		BatchingThreshold: payload.BatchingThreshold,
 		NotificationEmail: payload.NotificationEmail,
+		GithubURL:         payload.GithubURL,
+		WebURL:            payload.WebURL,
 		CreatedAt:         time.Now(),
 	}
 
@@ -147,4 +170,77 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, clientURL+"/#/app?org_id="+payload.OrgID, http.StatusTemporaryRedirect)
+}
+
+func handleListTasks(w http.ResponseWriter, r *http.Request) {
+	orgID := r.URL.Query().Get("org_id")
+	if orgID == "" {
+		http.Error(w, `{"error":"org_id required"}`, http.StatusBadRequest)
+		return
+	}
+	tasks, err := listTasksByOrg(r.Context(), orgID)
+	if err != nil {
+		log.Printf("list tasks error: %v", err)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tasks)
+}
+
+func handleApproveTask(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("task_id")
+	task, err := getTask(r.Context(), taskID)
+	if err != nil {
+		http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
+		return
+	}
+	if task.Status != "pending_approval" {
+		http.Error(w, `{"error":"task is not pending approval"}`, http.StatusBadRequest)
+		return
+	}
+	user, err := getUserByOrgID(r.Context(), task.OrgID)
+	if err != nil {
+		http.Error(w, `{"error":"org not found"}`, http.StatusNotFound)
+		return
+	}
+	token, err := getRepairSAToken(r.Context())
+	if err != nil {
+		log.Printf("approve: get token error: %v", err)
+		http.Error(w, `{"error":"could not get publish token"}`, http.StatusInternalServerError)
+		return
+	}
+	outAttrs := make(map[string]string, len(task.Attributes)+1)
+	for k, v := range task.Attributes {
+		outAttrs[k] = v
+	}
+	outAttrs["_deadlift_repaired"] = "true"
+	if err := publishMessage(r.Context(), token, user.MainTopic, task.FixedPayload, outAttrs); err != nil {
+		log.Printf("approve: publish error: %v", err)
+		http.Error(w, `{"error":"publish failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if err := updateTaskStatus(r.Context(), taskID, "approved"); err != nil {
+		log.Printf("approve: update task error: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+func handleDenyTask(w http.ResponseWriter, r *http.Request) {
+	taskID := r.PathValue("task_id")
+	task, err := getTask(r.Context(), taskID)
+	if err != nil {
+		http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
+		return
+	}
+	if task.Status != "pending_approval" {
+		http.Error(w, `{"error":"task is not pending approval"}`, http.StatusBadRequest)
+		return
+	}
+	if err := updateTaskStatus(r.Context(), taskID, "denied"); err != nil {
+		log.Printf("deny: update task error: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
 }
