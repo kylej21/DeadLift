@@ -11,20 +11,29 @@ resource "google_bigquery_table" "success_logs" {
   table_id            = "success_logs"
   deletion_protection = false
 
+  # Schema matches what Pub/Sub BigQuery subscriptions write with write_metadata=true.
+  # subscription_name encodes the org_id: deadlift-analytics-{org_id}
   schema = jsonencode([
-    { name = "org_id",     type = "STRING",    mode = "REQUIRED" },
-    { name = "message_id", type = "STRING",    mode = "NULLABLE" },
-    { name = "timestamp",  type = "TIMESTAMP", mode = "REQUIRED" },
-    { name = "event_type", type = "STRING",    mode = "NULLABLE" },
-    { name = "status",     type = "STRING",    mode = "NULLABLE" },
-    { name = "payload",    type = "JSON",      mode = "NULLABLE" },
-    { name = "attributes", type = "JSON",      mode = "NULLABLE" },
+    { name = "subscription_name", type = "STRING",    mode = "NULLABLE" },
+    { name = "message_id",        type = "STRING",    mode = "NULLABLE" },
+    { name = "publish_time",      type = "TIMESTAMP", mode = "NULLABLE" },
+    { name = "data",              type = "STRING",    mode = "NULLABLE" },
+    { name = "attributes",        type = "STRING",    mode = "NULLABLE" },
+    { name = "ordering_key",      type = "STRING",    mode = "NULLABLE" },
   ])
 
   time_partitioning {
     type  = "DAY"
-    field = "timestamp"
+    field = "publish_time"
   }
 
-  clustering = ["org_id", "event_type"]
+  clustering = ["subscription_name"]
+}
+
+# Proxy SA needs bigquery.dataEditor on the dataset so it can
+# dynamically add each customer's Pub/Sub service agent during onboarding.
+resource "google_bigquery_dataset_iam_member" "proxy_bq_editor" {
+  dataset_id = google_bigquery_dataset.deadlift.dataset_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.proxy.email}"
 }
