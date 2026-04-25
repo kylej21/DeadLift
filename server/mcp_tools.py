@@ -8,16 +8,15 @@ from dotenv import load_dotenv
 from fastmcp import FastMCP
 from google.cloud import logging as gcp_logging
 from google.cloud import bigquery
+from storage.graphrag import LocalGraphRAGStorage
 
-load_dotenv() 
+load_dotenv()
 
-mcp = FastMCP() 
+mcp = FastMCP()
 
 log_client = gcp_logging.Client()
 bigquery_client = bigquery.Client(project="your-project-id")
-
-# graph rag root directory, subject to change based on where the graph rag lives 
-GRAPH_RAG_ROOT = os.path.join(os.path.dirname(__file__), "graph_rag_workspace")
+_graphrag_store = LocalGraphRAGStorage()
 
 @mcp.tool()
 def fetch_gcp_logs(
@@ -85,6 +84,7 @@ def gcp_list_log_resource_types() -> list[str]:
 
 @mcp.tool()
 def graph_rag_query(
+    client_id: str,
     query: str,
     method: str = "local",
     response_type: str = "Multiple Paragraphs",
@@ -92,12 +92,13 @@ def graph_rag_query(
 ) -> dict:
     """
     Query the GraphRAG knowledge graph built from the codebase/incident data.
+    client_id identifies which client's knowledge graph to query.
     Use method='local' or 'drift' for specific entity/error questions (best for dead letter diagnosis).
     Use method='global' for broad questions about the whole dataset.
     """
     cmd = [
         "graphrag", "query",
-        "--root", GRAPH_RAG_ROOT,
+        "--root", str(_graphrag_store.get_root(client_id)),
         "--method", method,
         "--response-type", response_type,
         "--community-level", str(community_level),

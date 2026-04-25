@@ -4,15 +4,17 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
 
-from jobs.manager import JobStatus, job_manager
-from pipeline.clone import clone_repo, get_changed_files, get_current_sha
-from pipeline.configure import configure
-from pipeline.index import run_index, run_update
-from pipeline.preprocess import preprocess_all, preprocess_files
-from pipeline.tune import run_prompt_tune
-from storage.client_store import ClientState, client_store
+from .jobs.manager import JobStatus, job_manager
+from .pipeline.clone import clone_repo, get_changed_files, get_current_sha
+from .pipeline.configure import configure
+from .pipeline.index import run_index, run_update
+from .pipeline.preprocess import preprocess_all, preprocess_files
+from .pipeline.tune import run_prompt_tune
+from storage import ClientState, create_storage
 
 app = FastAPI()
+
+storage = create_storage()
 
 
 class OnboardRequest(BaseModel):
@@ -30,7 +32,7 @@ def _run_onboard(job_id: str, repo_url: str, client_id: str):
         repo_path = clone_repo(repo_url, str(Path("data/repos") / client_id))
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Preprocessing files")
-        graphrag_root = str(Path("data/graphrag") / client_id)
+        graphrag_root = str(storage.get_root(client_id))
         configure(graphrag_root)
         preprocess_all(repo_path, str(Path(graphrag_root) / "input"))
 
@@ -39,11 +41,11 @@ def _run_onboard(job_id: str, repo_url: str, client_id: str):
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Indexing knowledge base")
         run_index(graphrag_root)
+        storage.save_artifacts(client_id, Path(graphrag_root))
 
         sha = get_current_sha(repo_path)
-        client_store.save(ClientState(
+        storage.save_state(ClientState(
             client_id=client_id,
-            graphrag_root=graphrag_root,
             last_indexed_sha=sha,
         ))
 
@@ -54,13 +56,13 @@ def _run_onboard(job_id: str, repo_url: str, client_id: str):
 
 def _run_update(job_id: str, client_id: str):
     try:
-        state = client_store.get(client_id)
+        state = storage.get_state(client_id)
         if state is None:
             job_manager.update_job(job_id, JobStatus.FAILED, f"Client {client_id} not found")
             return
 
         repo_path = str(Path("data/repos") / client_id)
-        graphrag_root = state.graphrag_root
+        graphrag_root = str(storage.get_root(client_id))
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Fetching latest changes")
         subprocess.run(["git", "-C", repo_path, "fetch", "origin"], check=True)
@@ -76,10 +78,11 @@ def _run_update(job_id: str, client_id: str):
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Updating knowledge base")
         run_update(graphrag_root)
+        storage.save_artifacts(client_id, Path(graphrag_root))
 
         sha = get_current_sha(repo_path)
         state.last_indexed_sha = sha
-        client_store.save(state)
+        storage.save_state(state)
 
         job_manager.update_job(job_id, JobStatus.COMPLETED, "Knowledge base updated")
     except Exception as exc:
@@ -95,7 +98,7 @@ def onboard(req: OnboardRequest, background_tasks: BackgroundTasks):
 
 @app.post("/update")
 def update(req: UpdateRequest, background_tasks: BackgroundTasks):
-    state = client_store.get(req.client_id)
+    state = storage.get_state(req.client_id)
     if state is None:
         raise HTTPException(status_code=404, detail=f"Client {req.client_id} not found")
     job = job_manager.create_job(req.client_id)

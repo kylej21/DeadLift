@@ -93,6 +93,10 @@ resource "google_cloud_run_v2_service" "proxy" {
         name  = "REDIRECT_URI"
         value = "https://deadlift-proxy-f47qsb66lq-uc.a.run.app/api/onboard/callback"
       }
+      env {
+        name  = "GRAPHRAG_SERVER_URL"
+        value = var.graphrag_server_url
+      }
     }
   }
 

@@ -32,3 +32,9 @@ variable "proxy_client_url" {
   type        = string
   default     = "https://deadlift-client-f47qsb66lq-uc.a.run.app"
 }
+
+variable "graphrag_server_url" {
+  description = "Base URL of the GraphRAG onboarding server (host:port)"
+  type        = string
+  default     = "http://10.30.112.192:2626"
+}

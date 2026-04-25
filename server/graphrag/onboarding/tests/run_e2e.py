@@ -19,8 +19,9 @@ from dotenv import load_dotenv
 
 # --- path setup BEFORE any local imports ---
 ONBOARDING_ROOT = Path(__file__).parent.parent.resolve()
+SERVER_ROOT = ONBOARDING_ROOT.parent.parent
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-sys.path.insert(0, str(ONBOARDING_ROOT))
+sys.path.insert(0, str(SERVER_ROOT))
 
 _REQUIRED_ENV = [
     "GRAPHRAG_API_KEY",
@@ -107,8 +108,8 @@ def main():
     print(f"Output directory: {output_dir}\n")
 
     # now safe to import (singletons will use paths relative to output_dir)
-    from jobs.manager import job_manager, JobStatus
-    from main import _run_onboard, _run_update
+    from graphrag.onboarding.jobs.manager import job_manager, JobStatus
+    from graphrag.onboarding.main import _run_onboard, _run_update
 
     repo_url = args.repo
     remote_dir = None
@@ -134,9 +135,10 @@ def main():
         print(f"\n[FAIL] Job ended with status {final_job.status}: {final_job.message}")
         sys.exit(1)
 
-    from storage.client_store import client_store
-    state = client_store.get(client_id)
-    stage("Output structure check", lambda: check_outputs(state.graphrag_root))
+    from storage.graphrag import LocalGraphRAGStorage
+    _store = LocalGraphRAGStorage()
+    state = _store.get_state(client_id)
+    stage("Output structure check", lambda: check_outputs(_store.get_root(client_id)))
     print(f"       SHA: {state.last_indexed_sha}")
 
     if remote_dir:
@@ -154,7 +156,7 @@ def main():
         if final_update.status != JobStatus.COMPLETED:
             print(f"\n[FAIL] Update job ended with status {final_update.status}: {final_update.message}")
             sys.exit(1)
-        new_state = client_store.get(client_id)
+        new_state = _store.get_state(client_id)
         print(f"       SHA updated: {state.last_indexed_sha} → {new_state.last_indexed_sha}")
 
     total = time.time() - total_start
