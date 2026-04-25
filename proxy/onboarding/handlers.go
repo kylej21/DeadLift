@@ -92,6 +92,30 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleSignIn(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	state, err := generateState()
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	stateStore.Store(state, statePayload{Mode: "signin"})
+	params := url.Values{
+		"client_id":     {clientID},
+		"redirect_uri":  {redirectURI},
+		"response_type": {"code"},
+		"scope":         {"https://www.googleapis.com/auth/userinfo.email"},
+		"state":         {state},
+		"access_type":   {"online"},
+		"prompt":        {"select_account"},
+	}
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	enc.Encode(map[string]string{
+		"oauth_url": googleAuthURL + "?" + params.Encode(),
+	})
+}
+
 func handleCallback(w http.ResponseWriter, r *http.Request) {
 	redirect := func(errMsg string) {
 		http.Redirect(w, r, clientURL+"/#/onboarding?error="+url.QueryEscape(errMsg), http.StatusTemporaryRedirect)
@@ -116,6 +140,18 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("token exchange error: %v", err)
 		redirect("token_exchange_failed")
+		return
+	}
+
+	// Sign-in mode: look up existing user and redirect.
+	if payload.Mode == "signin" {
+		user, err := getUserByGoogleSub(r.Context(), info.Sub)
+		if err != nil {
+			log.Printf("signin: user not found for sub %s: %v", info.Sub, err)
+			redirect("user_not_found")
+			return
+		}
+		http.Redirect(w, r, clientURL+"/#/app?org_id="+user.OrgID, http.StatusTemporaryRedirect)
 		return
 	}
 
@@ -170,6 +206,21 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, clientURL+"/#/app?org_id="+payload.OrgID, http.StatusTemporaryRedirect)
+}
+
+func handleGetUser(w http.ResponseWriter, r *http.Request) {
+	orgID := r.URL.Query().Get("org_id")
+	if orgID == "" {
+		http.Error(w, `{"error":"org_id required"}`, http.StatusBadRequest)
+		return
+	}
+	user, err := getUserByOrgID(r.Context(), orgID)
+	if err != nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(user)
 }
 
 func handleListTasks(w http.ResponseWriter, r *http.Request) {

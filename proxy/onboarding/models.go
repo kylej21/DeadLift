@@ -19,6 +19,7 @@ type User struct {
 }
 
 type statePayload struct {
+	Mode              string // "onboard" | "signin"
 	OrgID             string
 	ProjectID         string
 	DLQSubscription   string

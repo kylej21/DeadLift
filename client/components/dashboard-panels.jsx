@@ -94,7 +94,7 @@ const KPI = ({ label, value, delta, accent }) => {
 };
 
 const MiniBarChart = ({ series }) => {
-  const max = Math.max(...series.map(s => s.dlq));
+  const max = Math.max(1, ...series.map(s => s.dlq));
   const h = 140;
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: h }}>
@@ -192,6 +192,11 @@ const RCACard = ({ report }) => {
 const SettingsTab = () => {
   const [showConfirm, setShowConfirm] = React.useState(false);
   const [terminating, setTerminating] = React.useState(false);
+  const [user, setUser] = React.useState(null);
+
+  React.useEffect(() => {
+    window.api.getUser().then(u => setUser(u || false));
+  }, []);
 
   const handleTerminate = async () => {
     setTerminating(true);
@@ -210,10 +215,19 @@ const SettingsTab = () => {
       {/* Connection info */}
       <div className="surface" style={{ padding: 18, marginBottom: 20 }}>
         <div className="eyebrow" style={{ marginBottom: 12, fontSize: 10 }}>Connection</div>
-        <ReviewRow2 label="GCP Project" value="acme-payments-prod" />
-        <ReviewRow2 label="DLQ Subscription" value="payments-events-dlq-sub" />
-        <ReviewRow2 label="Main Topic" value="payments-events" />
-        <ReviewRow2 label="Service account" value="deadlift-sa@acme-payments-prod.iam.gserviceaccount.com" last />
+        {user === null ? (
+          <div className="skeleton" style={{ height: 100 }} />
+        ) : user === false ? (
+          <p className="muted-2" style={{ fontSize: 13, margin: 0 }}>Not connected. Complete onboarding to see connection details.</p>
+        ) : (
+          <>
+            <ReviewRow2 label="GCP Project" value={user.project_id || '—'} />
+            <ReviewRow2 label="DLQ Subscription" value={user.dlq_subscription || '—'} />
+            <ReviewRow2 label="Main Topic" value={user.main_topic || '—'} />
+            <ReviewRow2 label="Email" value={user.email || '—'} />
+            <ReviewRow2 label="Org ID" value={user.org_id || '—'} last />
+          </>
+        )}
       </div>
 
       {/* Approval mode */}

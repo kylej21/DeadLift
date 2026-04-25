@@ -65,8 +65,8 @@
       const { path, params } = parseHash(route);
 
       // Store org_id in session when returning from OAuth
-      if (params.org_id && !window.session.orgId) {
-        window.session.orgId = params.org_id;
+      if (params.org_id) {
+        window.session.setOrgId(params.org_id);
       }
 
       let page;
