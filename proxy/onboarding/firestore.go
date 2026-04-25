@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"cloud.google.com/go/firestore"
 )
 
 func createUser(ctx context.Context, user User) error {
@@ -20,4 +23,59 @@ func getUserByOrgID(ctx context.Context, orgID string) (*User, error) {
 		return nil, fmt.Errorf("parse user: %w", err)
 	}
 	return &user, nil
+}
+
+func getAllUsers(ctx context.Context) ([]User, error) {
+	docs, err := fsClient.Collection("users").Documents(ctx).GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	users := make([]User, 0, len(docs))
+	for _, doc := range docs {
+		var u User
+		if err := doc.DataTo(&u); err == nil {
+			users = append(users, u)
+		}
+	}
+	return users, nil
+}
+
+func createTask(ctx context.Context, task Task) error {
+	_, err := fsClient.Collection("tasks").Doc(task.TaskID).Set(ctx, task)
+	return err
+}
+
+func getTask(ctx context.Context, taskID string) (*Task, error) {
+	doc, err := fsClient.Collection("tasks").Doc(taskID).Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get task: %w", err)
+	}
+	var task Task
+	if err := doc.DataTo(&task); err != nil {
+		return nil, fmt.Errorf("parse task: %w", err)
+	}
+	return &task, nil
+}
+
+func updateTaskStatus(ctx context.Context, taskID, status string) error {
+	_, err := fsClient.Collection("tasks").Doc(taskID).Update(ctx, []firestore.Update{
+		{Path: "status", Value: status},
+		{Path: "updated_at", Value: time.Now()},
+	})
+	return err
+}
+
+func listTasksByOrg(ctx context.Context, orgID string) ([]Task, error) {
+	docs, err := fsClient.Collection("tasks").Where("org_id", "==", orgID).OrderBy("created_at", firestore.Desc).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("list tasks: %w", err)
+	}
+	tasks := make([]Task, 0, len(docs))
+	for _, doc := range docs {
+		var t Task
+		if err := doc.DataTo(&t); err == nil {
+			tasks = append(tasks, t)
+		}
+	}
+	return tasks, nil
 }

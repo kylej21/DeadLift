@@ -65,9 +65,14 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/onboard/connect", handleConnect)
 	mux.HandleFunc("GET /api/onboard/callback", handleCallback)
+	mux.HandleFunc("GET /api/tasks", handleListTasks)
+	mux.HandleFunc("POST /api/tasks/{task_id}/approve", handleApproveTask)
+	mux.HandleFunc("POST /api/tasks/{task_id}/deny", handleDenyTask)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+
+	go startWorker(ctx)
 
 	log.Printf("proxy listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(mux)))
