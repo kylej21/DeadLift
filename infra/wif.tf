@@ -58,3 +58,10 @@ resource "google_service_account_iam_member" "run_act_as_compute" {
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.github_actions.email}"
 }
+
+# actAs on the proxy SA so CI can deploy the proxy service
+resource "google_service_account_iam_member" "run_act_as_proxy" {
+  service_account_id = google_service_account.proxy.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_actions.email}"
+}

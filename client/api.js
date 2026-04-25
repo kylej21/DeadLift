@@ -1,10 +1,8 @@
 // ============================================================
-// DeadLift — Mock client-side API
-// ------------------------------------------------------------
-// Every function here is the SEAM where a real backend call
-// will go. Each returns a Promise to mirror real fetch shape.
-// In Next.js, replace with: await fetch('/api/...').then(r => r.json())
+// DeadLift client-side API
 // ============================================================
+
+const PROXY_URL = 'https://deadlift-proxy-f47qsb66lq-uc.a.run.app';
 
 const __delay = (ms = 250) => new Promise(r => setTimeout(r, ms));
 
@@ -61,10 +59,26 @@ window.api.uploadContext = async (file) => {
   return { ok: true, id: 'ctx_' + Math.random().toString(36).slice(2, 9), name: file.name, size: file.size };
 };
 
-window.api.completeOnboarding = async (config) => {
-  await __delay(600);
-  // TODO: POST /api/onboarding/complete
-  return { ok: true, orgId: 'org_' + Math.random().toString(36).slice(2, 9) };
+window.api.startOnboarding = async (config) => {
+  const autoRepublish = {};
+  const CATS = ['Schema drift', 'Malformed JSON', 'Type mismatch', 'Missing field', 'Encoding', 'Downstream outage'];
+  CATS.forEach(cat => {
+    autoRepublish[cat] = (config.categoryOverrides[cat] || config.approvalMode) === 'auto';
+  });
+  const res = await fetch(`${PROXY_URL}/api/onboard/connect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_id: config.projectId,
+      dlq_subscription: config.dlqSub,
+      main_topic: config.mainTopic,
+      notification_email: config.notifications?.email || '',
+      batching_threshold: config.batchThreshold,
+      auto_republish: autoRepublish,
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json(); // { oauth_url: '...' }
 };
 
 // ---------- DASHBOARD ----------

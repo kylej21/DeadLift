@@ -1,30 +1,30 @@
-name: Deploy Client
+name: Deploy Proxy
 
 on:
   push:
     branches: [main]
     paths:
-      - "client/**"
-      - ".github/workflows/deploy-client.yml"
+      - "proxy/onboarding/**"
+      - ".github/workflows/deploy-proxy.yml"
   pull_request:
     branches: [main]
     paths:
-      - "client/**"
-      - ".github/workflows/deploy-client.yml"
+      - "proxy/onboarding/**"
+      - ".github/workflows/deploy-proxy.yml"
 
 env:
   REGION: us-central1
   REGISTRY: us-central1-docker.pkg.dev
   REPO: deadlift
-  IMAGE: client
-  SERVICE: deadlift-client
+  IMAGE: proxy
+  SERVICE: deadlift-proxy
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # required for Workload Identity Federation
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v5
         with:
-          context: ./client
+          context: ./proxy/onboarding
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}
@@ -59,6 +59,3 @@ jobs:
           service: ${{ env.SERVICE }}
           region: ${{ env.REGION }}
           image: ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}
-
-      - name: Print service URL
-        run: echo "Deployed to ${{ steps.deploy.outputs.url }}"
