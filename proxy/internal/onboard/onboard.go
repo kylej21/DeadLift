@@ -20,6 +20,11 @@ import (
 
 const googleAuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
 
+// GraphragTriggerer is implemented by the graphrag proxy to kick off background indexing.
+type GraphragTriggerer interface {
+	TriggerOnboard(orgID, repoURL string)
+}
+
 // Config holds all dependencies the onboarding handlers need.
 type Config struct {
 	ClientID     string
@@ -30,6 +35,7 @@ type Config struct {
 	GCPProject   string
 	Store        *store.Store
 	StateStore   *sync.Map
+	Graphrag     GraphragTriggerer
 }
 
 func generateState() (string, error) {
@@ -209,6 +215,10 @@ func (c *Config) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		log.Printf("firestore write error: %v", err)
 		redirect("db_write_failed")
 		return
+	}
+
+	if payload.GithubURL != "" && c.Graphrag != nil {
+		go c.Graphrag.TriggerOnboard(payload.OrgID, payload.GithubURL)
 	}
 
 	http.Redirect(w, r, c.ClientURL+"/#/app?org_id="+payload.OrgID, http.StatusTemporaryRedirect)

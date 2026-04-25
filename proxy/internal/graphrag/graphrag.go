@@ -1,13 +1,17 @@
 package graphrag
 
 import (
+	"bytes"
+	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 )
 
 type Proxy struct {
-	rp *httputil.ReverseProxy
+	serverURL string
+	rp        *httputil.ReverseProxy
 }
 
 func New(serverURL string) *Proxy {
@@ -18,7 +22,27 @@ func New(serverURL string) *Proxy {
 	if err != nil {
 		panic("invalid GRAPHRAG_SERVER_URL: " + err.Error())
 	}
-	return &Proxy{rp: httputil.NewSingleHostReverseProxy(target)}
+	return &Proxy{serverURL: serverURL, rp: httputil.NewSingleHostReverseProxy(target)}
+}
+
+// TriggerOnboard fires a POST /onboard to the graphrag server for the given org.
+// Intended to be called in a goroutine — logs errors but does not return them.
+func (p *Proxy) TriggerOnboard(orgID, repoURL string) {
+	if p.serverURL == "" {
+		log.Printf("graphrag: skipping onboard trigger for org %s — server not configured", orgID)
+		return
+	}
+	body, _ := json.Marshal(map[string]string{
+		"repo_url":  repoURL,
+		"client_id": orgID,
+	})
+	resp, err := http.Post(p.serverURL+"/onboard", "application/json", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("graphrag: trigger onboard for org %s: %v", orgID, err)
+		return
+	}
+	defer resp.Body.Close()
+	log.Printf("graphrag: triggered onboard for org %s, status %d", orgID, resp.StatusCode)
 }
 
 func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {

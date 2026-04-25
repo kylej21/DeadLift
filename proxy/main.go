@@ -56,6 +56,8 @@ func main() {
 	var stateStore sync.Map
 	st := store.New(fs, gcpProject)
 
+	gr := graphrag.New(os.Getenv("GRAPHRAG_SERVER_URL"))
+
 	ob := &onboard.Config{
 		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
@@ -65,6 +67,7 @@ func main() {
 		GCPProject:   gcpProject,
 		Store:        st,
 		StateStore:   &stateStore,
+		Graphrag:     gr,
 	}
 
 	th := &tasks.Handler{
@@ -76,8 +79,6 @@ func main() {
 		RepairSA: repairSA,
 		Store:    st,
 	}
-
-	gr := graphrag.New(os.Getenv("GRAPHRAG_SERVER_URL"))
 
 	mux := http.NewServeMux()
 
