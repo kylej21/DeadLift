@@ -7,12 +7,14 @@ import subprocess
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 from google.cloud import logging as gcp_logging
+from google.cloud import bigquery
 
 load_dotenv() 
 
 mcp = FastMCP() 
 
 log_client = gcp_logging.Client()
+bigquery_client = bigquery.Client(project="your-project-id")
 
 # graph rag root directory, subject to change based on where the graph rag lives 
 GRAPH_RAG_ROOT = os.path.join(os.path.dirname(__file__), "graph_rag_workspace")
@@ -117,14 +119,32 @@ def graph_rag_query(
     }
 
 @mcp.tool()
-def bigquery_query(): 
-    """ 
-    Recent window or one successful message. 
+def bigquery_last_n_query(
+    dataset: str, 
+    table: str, 
+    n: int = 10, 
+    order_by: str = "created_at"
+) -> list[dict]: 
     """
-    # ingestor will feed bad message into LLM and it'll use bigquery 
-    # to query for recent window of one or more successful messages 
+    Fetch the most recent N entries from a BigQuery table.
+
+    Args:
+        dataset: BigQuery dataset name
+        table: BigQuery table name
+        n: Number of rows to return (default 10, max 100)
+        order_by: Column to sort by descending (should be a timestamp or ID)
+    """
+    n = min(n, 100)  # safety cap
     
-    pass
+    query = f"""
+        SELECT *
+        FROM `{bigquery_client.project}.{dataset}.{table}`
+        ORDER BY {order_by} DESC
+        LIMIT {n}
+    """
+
+    results = bigquery_client.query(query)
+    return [dict(row) for row in results]
 
 if __name__ == "__main__":
     mcp.run() 
