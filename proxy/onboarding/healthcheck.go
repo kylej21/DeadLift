@@ -5,19 +5,26 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // healthCheck verifies the subscription and topic exist using the customer's token.
 // IAM propagation takes ~60s so we don't test repairSA access here — just that
 // the resources the user provided are real.
 func healthCheck(ctx context.Context, token, projectID, dlqSub, mainTopic string) error {
-	subURL := fmt.Sprintf("https://pubsub.googleapis.com/v1/projects/%s/subscriptions/%s", projectID, dlqSub)
-	if err := getResource(ctx, token, subURL); err != nil {
+	subResource := dlqSub
+	if !strings.HasPrefix(dlqSub, "projects/") {
+		subResource = fmt.Sprintf("projects/%s/subscriptions/%s", projectID, dlqSub)
+	}
+	if err := getResource(ctx, token, "https://pubsub.googleapis.com/v1/"+subResource); err != nil {
 		return fmt.Errorf("DLQ subscription %q not found: %w", dlqSub, err)
 	}
 
-	topicURL := fmt.Sprintf("https://pubsub.googleapis.com/v1/projects/%s/topics/%s", projectID, mainTopic)
-	if err := getResource(ctx, token, topicURL); err != nil {
+	topicResource := mainTopic
+	if !strings.HasPrefix(mainTopic, "projects/") {
+		topicResource = fmt.Sprintf("projects/%s/topics/%s", projectID, mainTopic)
+	}
+	if err := getResource(ctx, token, "https://pubsub.googleapis.com/v1/"+topicResource); err != nil {
 		return fmt.Errorf("main topic %q not found: %w", mainTopic, err)
 	}
 

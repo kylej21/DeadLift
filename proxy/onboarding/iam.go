@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -89,13 +90,19 @@ func grantPermissions(ctx context.Context, token, projectID, dlqSubName, topicNa
 	member := "serviceAccount:" + saEmail
 	var results []GrantResult
 
-	dlqResource := fmt.Sprintf("projects/%s/subscriptions/%s", projectID, dlqSubName)
+	dlqResource := dlqSubName
+	if !strings.HasPrefix(dlqSubName, "projects/") {
+		dlqResource = fmt.Sprintf("projects/%s/subscriptions/%s", projectID, dlqSubName)
+	}
 	if err := setPubSubIAM(ctx, token, dlqResource, "roles/pubsub.subscriber", member); err != nil {
 		return nil, fmt.Errorf("DLQ subscription: %w", err)
 	}
 	results = append(results, GrantResult{Resource: dlqResource, Role: "roles/pubsub.subscriber"})
 
-	topicResource := fmt.Sprintf("projects/%s/topics/%s", projectID, topicName)
+	topicResource := topicName
+	if !strings.HasPrefix(topicName, "projects/") {
+		topicResource = fmt.Sprintf("projects/%s/topics/%s", projectID, topicName)
+	}
 	if err := setPubSubIAM(ctx, token, topicResource, "roles/pubsub.publisher", member); err != nil {
 		return nil, fmt.Errorf("main topic: %w", err)
 	}
