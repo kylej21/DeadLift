@@ -120,29 +120,24 @@ def graph_rag_query(
 
 @mcp.tool()
 def bigquery_last_n_query(
-    dataset: str, 
-    table: str, 
-    n: int = 10, 
-    order_by: str = "created_at"
-) -> list[dict]: 
+    dataset: str,
+    table: str,
+    n: int = 5,
+    order_by: str | None = None,
+) -> list[dict]:
     """
-    Fetch the most recent N entries from a BigQuery table.
+    Fetch N rows from a BigQuery table (equivalent to:
+    bq query --nouse_legacy_sql 'SELECT * FROM `project.dataset.table` LIMIT n').
 
     Args:
-        dataset: BigQuery dataset name
-        table: BigQuery table name
-        n: Number of rows to return (default 10, max 100)
-        order_by: Column to sort by descending (should be a timestamp or ID)
+        dataset: BigQuery dataset name (e.g. "deadlift")
+        table: BigQuery table name (e.g. "success_logs")
+        n: Number of rows to return (default 5, max 100)
+        order_by: Optional column to sort by descending (e.g. a timestamp column)
     """
-    n = min(n, 100)  # safety cap
-    
-    query = f"""
-        SELECT *
-        FROM `{bigquery_client.project}.{dataset}.{table}`
-        ORDER BY {order_by} DESC
-        LIMIT {n}
-    """
-
+    n = min(n, 100) # safety cap of 100 prev entries 
+    order_clause = f"ORDER BY {order_by} DESC" if order_by else ""
+    query = f"SELECT * FROM `{bigquery_client.project}.{dataset}.{table}` {order_clause} LIMIT {n}"
     results = bigquery_client.query(query)
     return [dict(row) for row in results]
 
