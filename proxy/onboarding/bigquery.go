@@ -118,7 +118,7 @@ func createBQSubscription(ctx context.Context, token, customerProjectID, mainTop
 	}
 
 	subName := fmt.Sprintf("projects/%s/subscriptions/deadlift-analytics-%s", customerProjectID, orgID)
-	table := fmt.Sprintf("projects/%s/datasets/deadlift/tables/success_logs", gcpProject)
+	table := fmt.Sprintf("%s:deadlift.success_logs", gcpProject)
 
 	body, _ := json.Marshal(map[string]interface{}{
 		"topic": topicResource,
