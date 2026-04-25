@@ -1,0 +1,11 @@
+pubsub:
+  project_id: my-project
+  topic: payment-events
+  subscription: payment-events-sub
+  dead_letter_topic: payment-events-dlq
+  dead_letter_subscription: payment-events-dlq-sub
+  max_delivery_attempts: 5
+
+retry_policy:
+  minimum_backoff: 10s
+  maximum_backoff: 600s

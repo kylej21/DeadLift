@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+gitpython
+graphrag
+python-dotenv

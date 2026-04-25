@@ -12,12 +12,13 @@ import (
 )
 
 var (
-	clientID     = os.Getenv("GOOGLE_CLIENT_ID")
-	clientSecret = os.Getenv("GOOGLE_CLIENT_SECRET")
-	redirectURI  = os.Getenv("REDIRECT_URI")
-	repairSA     = os.Getenv("REPAIR_SA_EMAIL")
-	clientURL    = os.Getenv("CLIENT_URL")
-	gcpProject   = os.Getenv("GCP_PROJECT_ID")
+	clientID          = os.Getenv("GOOGLE_CLIENT_ID")
+	clientSecret      = os.Getenv("GOOGLE_CLIENT_SECRET")
+	redirectURI       = os.Getenv("REDIRECT_URI")
+	repairSA          = os.Getenv("REPAIR_SA_EMAIL")
+	clientURL         = os.Getenv("CLIENT_URL")
+	gcpProject        = os.Getenv("GCP_PROJECT_ID")
+	graphragServerURL = os.Getenv("GRAPHRAG_SERVER_URL")
 
 	fsClient   *firestore.Client
 	stateStore sync.Map
@@ -57,6 +58,8 @@ func main() {
 	}
 	defer fsClient.Close()
 
+	initGraphragProxy()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -70,6 +73,9 @@ func main() {
 	mux.HandleFunc("GET /api/tasks", handleListTasks)
 	mux.HandleFunc("POST /api/tasks/{task_id}/approve", handleApproveTask)
 	mux.HandleFunc("POST /api/tasks/{task_id}/deny", handleDenyTask)
+	mux.HandleFunc("POST /api/graphrag/onboard", handleGraphragOnboard)
+	mux.HandleFunc("POST /api/graphrag/update", handleGraphragUpdate)
+	mux.HandleFunc("GET /api/graphrag/status/{job_id}", handleGraphragStatus)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
