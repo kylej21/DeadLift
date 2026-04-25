@@ -12,7 +12,7 @@ const ONBOARD_STEPS = [
   { key: 'review', label: 'Review & finish' },
 ];
 
-const Onboarding = () => {
+const Onboarding = ({ error: initError }) => {
   const [step, setStep] = React.useState(0);
   const [cfg, setCfg] = React.useState({
     projectId: '', dlqSub: '', mainTopic: '',
@@ -21,14 +21,19 @@ const Onboarding = () => {
     batchThreshold: 5,
     notifications: { slack: '', email: window.session.user?.email || '', pagerduty: '' },
   });
+  const [submitError, setSubmitError] = React.useState(initError || null);
   const upd = (patch) => setCfg(c => ({ ...c, ...patch }));
   const next = () => setStep(s => Math.min(s + 1, ONBOARD_STEPS.length - 1));
   const prev = () => setStep(s => Math.max(s - 1, 0));
 
   const finish = async () => {
-    await window.api.completeOnboarding(cfg);
-    window.session.setConfig(cfg);
-    location.hash = '#/app';
+    setSubmitError(null);
+    try {
+      const { oauth_url } = await window.api.startOnboarding(cfg);
+      window.location.href = oauth_url;
+    } catch (e) {
+      setSubmitError(e.message || 'Failed to start onboarding. Please try again.');
+    }
   };
 
   const panels = [
@@ -44,7 +49,13 @@ const Onboarding = () => {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <TopNav variant="public" />
-      <div className="container-narrow" style={{ flex: 1, padding: '48px 24px 80px', display: 'flex', gap: 40 }}>
+      <div className="container-narrow" style={{ flex: 1, padding: '48px 24px 80px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+        {submitError && (
+          <div style={{ padding: '12px 16px', borderRadius: 8, background: 'var(--red-bg, #2a1414)', border: '1px solid var(--red-line, #6b2020)', color: 'var(--red, #f87171)', fontSize: 13 }}>
+            {submitError}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 40, flex: 1 }}>
         {/* Sidebar stepper */}
         <div style={{ flex: '0 0 200px' }}>
           <div className="eyebrow" style={{ marginBottom: 18 }}>Setup</div>
@@ -70,6 +81,7 @@ const Onboarding = () => {
               <button className="btn btn-primary" onClick={next}>Continue <ArrowIcon /></button>
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>
@@ -97,29 +109,19 @@ const StepGCP = ({ cfg, upd }) => (
   </div>
 );
 
-const StepPubSub = ({ cfg, upd }) => {
-  const [resources, setResources] = React.useState(null);
-  React.useEffect(() => {
-    if (cfg.projectId) window.api.listPubsubResources({ projectId: cfg.projectId }).then(setResources);
-    else setResources({ topics: [], subscriptions: [] });
-  }, [cfg.projectId]);
-  return (
-    <div>
-      <h2 className="h3" style={{ marginBottom: 6 }}>Select your Pub/Sub resources</h2>
-      <p className="muted-2" style={{ fontSize: 14, marginBottom: 24 }}>Pick the DLQ subscription to monitor and the main topic to republish to.</p>
-      <label className="lbl">DLQ Subscription</label>
-      <select className="field" value={cfg.dlqSub} onChange={e => upd({ dlqSub: e.target.value })} style={{ marginBottom: 16 }}>
-        <option value="">Select subscription…</option>
-        {(resources?.subscriptions || []).filter(s => s.includes('dlq')).map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-      <label className="lbl">Main Topic (republish target)</label>
-      <select className="field" value={cfg.mainTopic} onChange={e => upd({ mainTopic: e.target.value })}>
-        <option value="">Select topic…</option>
-        {(resources?.topics || []).filter(t => !t.includes('dlq')).map(t => <option key={t} value={t}>{t}</option>)}
-      </select>
-    </div>
-  );
-};
+const StepPubSub = ({ cfg, upd }) => (
+  <div>
+    <h2 className="h3" style={{ marginBottom: 6 }}>Select your Pub/Sub resources</h2>
+    <p className="muted-2" style={{ fontSize: 14, marginBottom: 24 }}>Enter the full resource names for the DLQ subscription to monitor and the main topic to republish fixed messages to.</p>
+    <label className="lbl">DLQ Subscription</label>
+    <input className="field" style={{ marginBottom: 16 }} value={cfg.dlqSub} onChange={e => upd({ dlqSub: e.target.value })}
+      placeholder="projects/my-project/subscriptions/payments-dlq-sub" />
+    <label className="lbl">Main Topic (republish target)</label>
+    <input className="field" value={cfg.mainTopic} onChange={e => upd({ mainTopic: e.target.value })}
+      placeholder="projects/my-project/topics/payments-events" />
+    <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Found in GCP Console → Pub/Sub. Use the full resource path.</p>
+  </div>
+);
 
 const StepContext = ({ cfg, upd }) => {
   const [uploading, setUploading] = React.useState(false);
@@ -218,21 +220,11 @@ const StepBatching = ({ cfg, upd }) => (
 const StepNotify = ({ cfg, upd }) => (
   <div>
     <h2 className="h3" style={{ marginBottom: 6 }}>Notification settings</h2>
-    <p className="muted-2" style={{ fontSize: 14, marginBottom: 24 }}>Get alerted when fixes need approval or when a new root cause is detected.</p>
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div>
-        <label className="lbl">Slack webhook URL</label>
-        <input className="field" value={cfg.notifications.slack} onChange={e => upd({ notifications: { ...cfg.notifications, slack: e.target.value } })} placeholder="https://hooks.slack.com/services/..." />
-      </div>
-      <div>
-        <label className="lbl">Email</label>
-        <input className="field" value={cfg.notifications.email} onChange={e => upd({ notifications: { ...cfg.notifications, email: e.target.value } })} />
-      </div>
-      <div>
-        <label className="lbl">PagerDuty integration key <span className="muted" style={{ fontWeight: 400 }}>(optional)</span></label>
-        <input className="field" value={cfg.notifications.pagerduty} onChange={e => upd({ notifications: { ...cfg.notifications, pagerduty: e.target.value } })} placeholder="e.g. R03F..." />
-      </div>
-    </div>
+    <p className="muted-2" style={{ fontSize: 14, marginBottom: 24 }}>Get alerted by email when fixes need approval or a new root cause is detected.</p>
+    <label className="lbl">Email</label>
+    <input className="field" type="email" value={cfg.notifications.email}
+      onChange={e => upd({ notifications: { ...cfg.notifications, email: e.target.value } })}
+      placeholder="you@company.com" />
   </div>
 );
 
@@ -251,7 +243,7 @@ const StepReview = ({ cfg, onFinish }) => {
         <ReviewRow label="GitHub URL" value={cfg.githubUrl || '—'} />
         <ReviewRow label="Approval mode" value={cfg.approvalMode === 'auto' ? 'Fully autonomous' : 'Human-in-the-loop'} />
         <ReviewRow label="Batch threshold" value={`≥ ${cfg.batchThreshold} messages`} />
-        <ReviewRow label="Notifications" value={[cfg.notifications.slack && 'Slack', cfg.notifications.email && 'Email', cfg.notifications.pagerduty && 'PagerDuty'].filter(Boolean).join(', ') || '—'} last />
+        <ReviewRow label="Notification email" value={cfg.notifications.email || '—'} last />
       </div>
       <button className="btn btn-green btn-lg" style={{ width: '100%' }} onClick={go} disabled={loading}>
         {loading ? 'Finishing setup…' : 'Launch DeadLift'}
