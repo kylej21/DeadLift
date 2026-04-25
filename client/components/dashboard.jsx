@@ -117,8 +117,8 @@ const FixCard = ({ fix, onApprove, onDeny }) => {
 
           {/* Diff */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }}>
-            <FixDiffPane title="Before (original)" json={fix.before} variant="before" />
-            <FixDiffPane title="After (proposed fix)" json={fix.after} variant="after" />
+            <FixDiffPane title="Before (original)" json={fix.before} otherJson={fix.after} variant="before" />
+            <FixDiffPane title="After (proposed fix)" json={fix.after} otherJson={fix.before} variant="after" />
           </div>
 
           {/* Sources */}
@@ -151,8 +151,9 @@ const FixCard = ({ fix, onApprove, onDeny }) => {
   );
 };
 
-const FixDiffPane = ({ title, json, variant }) => {
-  const lines = json.split('\n');
+const FixDiffPane = ({ title, json, otherJson, variant }) => {
+  const lines = (json || '').split('\n');
+  const otherLineSet = new Set((otherJson || '').split('\n').map(l => l.trim()));
   return (
     <div style={{ borderRight: variant === 'before' ? '1px solid var(--line)' : 'none' }}>
       <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)', fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', justifyContent: 'space-between' }}>
@@ -161,11 +162,7 @@ const FixDiffPane = ({ title, json, variant }) => {
       </div>
       <div style={{ padding: '6px 0', background: 'var(--bg-1)', overflowX: 'auto', maxHeight: 280 }}>
         {lines.map((l, i) => {
-          const trimmed = l.trim();
-          const isChanged = variant === 'before'
-            ? (trimmed.includes('"amount"') || trimmed.includes('"in_stock": "') || trimmed.includes('"qty_on_hand": "') || trimmed.includes('trailing') || trimmed === '"amount": 4999,' || trimmed.startsWith('"customer_name": "Andr'))
-            : (trimmed.includes('"amount_cents"') || trimmed.includes('"in_stock": true') || trimmed.includes('"qty_on_hand": 143') || trimmed.includes('"channel"') || trimmed.startsWith('"customer_name": "Andr'));
-          // Simpler: diff only lines that differ between before/after
+          const isChanged = l.trim() !== '' && !otherLineSet.has(l.trim());
           return (
             <div key={i} className={`diff-line ${isChanged ? (variant === 'before' ? 'diff-del' : 'diff-add') : ''}`}>
               <span className="diff-gutter">{i + 1}</span>

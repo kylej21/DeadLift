@@ -25,6 +25,21 @@ func getUserByOrgID(ctx context.Context, orgID string) (*User, error) {
 	return &user, nil
 }
 
+func getUserByGoogleSub(ctx context.Context, sub string) (*User, error) {
+	docs, err := fsClient.Collection("users").Where("google_sub", "==", sub).Limit(1).Documents(ctx).GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("get user by sub: %w", err)
+	}
+	if len(docs) == 0 {
+		return nil, fmt.Errorf("user not found")
+	}
+	var user User
+	if err := docs[0].DataTo(&user); err != nil {
+		return nil, fmt.Errorf("parse user: %w", err)
+	}
+	return &user, nil
+}
+
 func getAllUsers(ctx context.Context) ([]User, error) {
 	docs, err := fsClient.Collection("users").Documents(ctx).GetAll()
 	if err != nil {

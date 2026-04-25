@@ -9,10 +9,11 @@ const __delay = (ms = 250) => new Promise(r => setTimeout(r, ms));
 // ---------- AUTH ----------
 window.api = window.api || {};
 
-window.api.signIn = async ({ email, password }) => {
-  await __delay(400);
-  // TODO: POST /api/auth/signin
-  return { ok: true, user: { email, name: email.split('@')[0], org: 'acme-payments' } };
+window.api.signInWithGoogle = async () => {
+  const res = await fetch(`${PROXY_URL}/api/onboard/signin`);
+  if (!res.ok) throw new Error(await res.text());
+  const { oauth_url } = await res.json();
+  location.href = oauth_url;
 };
 
 window.api.signUp = async ({ email, password }) => {
@@ -26,6 +27,41 @@ window.api.signOut = async () => {
   // TODO: POST /api/auth/signout
   return { ok: true };
 };
+
+// ---------- HELPERS ----------
+const __timeAgo = (isoStr) => {
+  if (!isoStr) return '—';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+};
+
+const __tryFormat = (str) => {
+  try { return JSON.stringify(JSON.parse(str), null, 2); } catch { return str || ''; }
+};
+
+const __taskToFix = (task) => ({
+  id: task.task_id,
+  status: task.status === 'pending_approval' ? 'pending'
+        : task.status === 'approved' ? 'fixed'
+        : task.status === 'failed' ? 'denied'
+        : task.status,
+  category: 'AI Repair',
+  confidence: 0.85,
+  subscription: task.attributes?.dlq_subscription || task.org_id,
+  topic: task.attributes?.main_topic || '—',
+  receivedAt: __timeAgo(task.created_at),
+  fixedAt: task.status === 'approved' ? __timeAgo(task.updated_at) : null,
+  error: `Pub/Sub message ${task.message_id}`,
+  batch: null,
+  before: __tryFormat(task.raw_payload),
+  after: __tryFormat(task.fixed_payload),
+  sources: [],
+});
 
 // ---------- ONBOARDING ----------
 window.api.connectGCP = async ({ projectId }) => {
@@ -84,40 +120,71 @@ window.api.startOnboarding = async (config) => {
 };
 
 // ---------- DASHBOARD ----------
+window.api.getUser = async () => {
+  const orgId = window.session.orgId;
+  if (!orgId) return null;
+  try {
+    const res = await fetch(`${PROXY_URL}/api/users?org_id=${orgId}`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch { return null; }
+};
+
 window.api.getFixes = async () => {
-  await __delay(300);
-  return MOCK_FIXES;
+  const orgId = window.session.orgId;
+  if (!orgId) return [];
+  const res = await fetch(`${PROXY_URL}/api/tasks?org_id=${orgId}`);
+  if (!res.ok) return [];
+  const tasks = await res.json();
+  return (tasks || []).map(__taskToFix);
 };
 
 window.api.approveFix = async (id) => {
-  await __delay(300);
+  await fetch(`${PROXY_URL}/api/tasks/${id}/approve`, { method: 'POST' });
   return { ok: true, id, status: 'fixed' };
 };
 
-window.api.denyFix = async (id, reason) => {
-  await __delay(200);
+window.api.denyFix = async (id) => {
+  await fetch(`${PROXY_URL}/api/tasks/${id}/deny`, { method: 'POST' });
   return { ok: true, id, status: 'denied' };
 };
 
-window.api.getBatches = async () => {
-  await __delay(300);
-  return MOCK_BATCHES;
-};
+window.api.getBatches = async () => [];
 
-window.api.approveBatch = async (id) => {
-  await __delay(400);
-  return { ok: true, id, status: 'fixed' };
+window.api.approveBatch = async (id) => ({ ok: true, id, status: 'fixed' });
+
+const __emptyAnalytics = (tasks) => {
+  tasks = tasks || [];
+  const total = tasks.length;
+  const approved = tasks.filter(t => t.status === 'approved').length;
+  const pending = tasks.filter(t => t.status === 'pending_approval').length;
+  const denied = tasks.filter(t => t.status === 'denied' || t.status === 'failed').length;
+  return {
+    kpis: {
+      dlqVolume24h: total,
+      autoFixed: approved,
+      awaitingApproval: pending,
+      unfixable: denied,
+      mttrBefore: '—',
+      mttrAfter: '—',
+      mttrDelta: 0,
+      estSavings30d: 0,
+    },
+    series: Array.from({ length: 24 }, (_, i) => ({ hour: i, dlq: 0, fixed: 0, awaiting: 0, unfixable: 0 })),
+    categories: [],
+    topics: [],
+  };
 };
 
 window.api.getAnalytics = async () => {
-  await __delay(300);
-  return MOCK_ANALYTICS;
+  const orgId = window.session.orgId;
+  if (!orgId) return __emptyAnalytics([]);
+  const res = await fetch(`${PROXY_URL}/api/tasks?org_id=${orgId}`);
+  if (!res.ok) return __emptyAnalytics([]);
+  return __emptyAnalytics(await res.json());
 };
 
-window.api.getRCAReports = async () => {
-  await __delay(300);
-  return MOCK_RCA;
-};
+window.api.getRCAReports = async () => [];
 
 window.api.terminateService = async () => {
   await __delay(900);
@@ -400,11 +467,13 @@ const MOCK_RCA = [
 ];
 
 // ============================================================
-// SESSION (in-memory; replace with cookie/JWT)
+// SESSION
 // ============================================================
 window.session = window.session || {
   user: null,
   config: null,
+  orgId: localStorage.getItem('dl_org_id') || null,
   setUser(u) { this.user = u; },
   setConfig(c) { this.config = c; },
+  setOrgId(id) { this.orgId = id; if (id) localStorage.setItem('dl_org_id', id); else localStorage.removeItem('dl_org_id'); },
 };

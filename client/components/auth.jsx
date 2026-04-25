@@ -32,7 +32,13 @@ const SignIn = () => (
   <AuthShell title="Welcome back" subtitle="Sign in to your DeadLift dashboard."
     footer={<>New here? <a href="#/signup" className="link">Create an account</a></>}>
     <button className="btn" style={{ width: '100%', background: '#fff', color: '#0a0b0d', borderColor: '#fff' }}
-      onClick={() => { window.session.setUser({ email: 'sre@acme.com', name: 'sre', org: 'acme-payments' }); location.hash = '#/app'; }}>
+      onClick={() => {
+        if (window.session.orgId) {
+          location.hash = '#/app';
+        } else {
+          window.api.signInWithGoogle().catch(err => alert('Sign-in failed: ' + err.message));
+        }
+      }}>
       <GoogleIcon /> Continue with Google
     </button>
   </AuthShell>

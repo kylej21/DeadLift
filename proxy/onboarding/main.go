@@ -64,7 +64,9 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/onboard/connect", handleConnect)
+	mux.HandleFunc("GET /api/onboard/signin", handleSignIn)
 	mux.HandleFunc("GET /api/onboard/callback", handleCallback)
+	mux.HandleFunc("GET /api/users", handleGetUser)
 	mux.HandleFunc("GET /api/tasks", handleListTasks)
 	mux.HandleFunc("POST /api/tasks/{task_id}/approve", handleApproveTask)
 	mux.HandleFunc("POST /api/tasks/{task_id}/deny", handleDenyTask)
