@@ -1,0 +1,112 @@
+completion_models:
+  default_completion_model:
+    model_provider: openai
+    model: ${GRAPHRAG_MODEL}
+    api_base: ${GRAPHRAG_LLM_BASE_URL}
+    api_key: ${GRAPHRAG_API_KEY}
+    auth_method: api_key
+    retry:
+      type: exponential_backoff
+
+embedding_models:
+  default_embedding_model:
+    model_provider: openai
+    model: ${GRAPHRAG_EMBEDDING_MODEL}
+    api_base: ${GRAPHRAG_EMBEDDING_BASE_URL}
+    api_key: ${GRAPHRAG_API_KEY}
+    auth_method: api_key
+    retry:
+      type: exponential_backoff
+
+input:
+  type: text
+
+chunking:
+  type: tokens
+  size: 300
+  overlap: 50
+  encoding_model: o200k_base
+
+input_storage:
+  type: file
+  base_dir: "input"
+
+output_storage:
+  type: file
+  base_dir: "output"
+
+reporting:
+  type: file
+  base_dir: "output/reports"
+
+cache:
+  type: json
+  storage:
+    type: file
+    base_dir: "cache"
+
+vector_store:
+  type: lancedb
+  db_uri: output/lancedb
+
+embed_text:
+  embedding_model_id: default_embedding_model
+
+extract_graph:
+  completion_model_id: default_completion_model
+  prompt: "prompts/extract_graph.txt"
+  entity_types:
+    - topic
+    - subscription
+    - message_schema
+    - publisher
+    - consumer
+    - handler
+    - error_type
+    - retry_policy
+    - dead_letter_config
+    - service
+    - dependency
+    - config_key
+  max_gleanings: 1
+
+summarize_descriptions:
+  completion_model_id: default_completion_model
+  prompt: "prompts/summarize_descriptions.txt"
+  max_length: 500
+
+extract_graph_nlp:
+  text_analyzer:
+    extractor_type: regex_english
+
+cluster_graph:
+  max_cluster_size: 10
+
+extract_claims:
+  enabled: false
+  completion_model_id: default_completion_model
+
+community_reports:
+  completion_model_id: default_completion_model
+  graph_prompt: "prompts/community_report_graph.txt"
+  max_length: 2000
+  max_input_length: 8000
+
+snapshots:
+  graphml: false
+  embeddings: false
+
+local_search:
+  completion_model_id: default_completion_model
+  embedding_model_id: default_embedding_model
+
+global_search:
+  completion_model_id: default_completion_model
+
+drift_search:
+  completion_model_id: default_completion_model
+  embedding_model_id: default_embedding_model
+
+basic_search:
+  completion_model_id: default_completion_model
+  embedding_model_id: default_embedding_model
