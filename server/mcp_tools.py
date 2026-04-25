@@ -3,7 +3,6 @@ Define all MCP tools for LQL, Graphrag and Bigquery
 """
 
 import os 
-from datetime import datetime, timedelta, timezone 
 from dotenv import load_dotenv 
 from fastmcp import FastMCP 
 from google.cloud import logging as gcp_logging 
@@ -14,40 +13,61 @@ mcp = FastMCP()
 
 log_client = gcp_logging.Client()
 
-@mcp.tool() 
-def fetch_gcp_logs(resource_type: str = "cloud_run_revision",
+@mcp.tool()
+def fetch_gcp_logs(
+    resource_type: str = "cloud_run_revision",
     severity: str = "ERROR",
-    hours_back: int = 1, 
-    max_entries: int = 50, 
-) -> list[dict]:  
-    """ 
-    Fetch Recent GCP logs filtered by resource type, severity, and time range. 
+    page_size: int = 25,
+    page_token: str | None = None,
+) -> dict:
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+    Fetch GCP logs filtered by resource type and severity, with pagination.
+    Returns the most recent `page_size` logs and a next_page_token.
+    If the relevant log isn't in the returned batch, call again with next_page_token
+    to page further back in time.
+    """
     filter_str = (
         f'resource.type="{resource_type}" '
-        f'severity>="{severity}" '
-        f'timestamp>="{cutoff.isoformat()}"'
+        f'severity>="{severity}"'
     )
 
-    entries = [] 
-    for entry in log_client.list_entries(
-        filter_=filter_str, 
-        max_results=max_entries, 
+    iterator = log_client.list_entries(
+        filter_=filter_str,
+        max_results=page_size,
         order_by=gcp_logging.DESCENDING,
-    ): 
-        entries.append({
-            "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
-            "severity": entry.severity,
-            "resource_type": entry.resource.type if entry.resource else None,
-            "resource_labels": dict(entry.resource.labels) if entry.resource else {},
-            "message": str(entry.payload) if entry.payload else "",
-            "log_name": entry.log_name,
-        })
-    return entries
+        page_token=page_token,
+    )
+
+    entries = []
+    try:
+        page = next(iterator.pages)
+        for entry in page:
+            payload = entry.payload
+            if isinstance(payload, dict):
+                parsed_payload = payload
+            else:
+                parsed_payload = str(payload) if payload else ""
+
+            entries.append({
+                "insert_id": entry.insert_id,
+                "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
+                "severity": entry.severity,
+                "log_name": entry.log_name,
+                "resource_type": entry.resource.type if entry.resource else None,
+                "resource_labels": dict(entry.resource.labels) if entry.resource else {},
+                "payload": parsed_payload,
+            })
+    except StopIteration:
+        pass
+
+    return {
+        "entries": entries,
+        "count": len(entries),
+        "next_page_token": iterator.next_page_token,
+    }
 
 @mcp.tool() 
-def list_log_resource_types() -> list[str]:
+def gcp_list_log_resource_types() -> list[str]:
     """List common GCP monitored resource types for log filtering."""
     return [
         "gce_instance",
