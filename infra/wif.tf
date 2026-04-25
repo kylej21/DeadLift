@@ -59,6 +59,13 @@ resource "google_service_account_iam_member" "run_act_as_compute" {
   member             = "serviceAccount:${google_service_account.github_actions.email}"
 }
 
+# Proxy SA can impersonate repairSA to pull from / publish to customer Pub/Sub
+resource "google_service_account_iam_member" "proxy_impersonate_repair_sa" {
+  service_account_id = google_service_account.repair.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.proxy.email}"
+}
+
 # actAs on the proxy SA so CI can deploy the proxy service
 resource "google_service_account_iam_member" "run_act_as_proxy" {
   service_account_id = google_service_account.proxy.name

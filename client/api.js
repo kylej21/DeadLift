@@ -75,6 +75,8 @@ window.api.startOnboarding = async (config) => {
       notification_email: config.notifications?.email || '',
       batching_threshold: config.batchThreshold,
       auto_republish: autoRepublish,
+      github_url: config.githubUrl || '',
+      web_url: config.webUrl || '',
     }),
   });
   if (!res.ok) throw new Error(await res.text());

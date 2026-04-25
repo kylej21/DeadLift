@@ -27,3 +27,8 @@ output "redirect_uri" {
   description = "Set this as REDIRECT_URI env var on the proxy and in your Google OAuth app"
   value       = "${google_cloud_run_v2_service.proxy.uri}/api/onboard/callback"
 }
+
+output "repair_sa_email" {
+  description = "Grant this SA access to customer Pub/Sub resources during onboarding"
+  value       = google_service_account.repair.email
+}
