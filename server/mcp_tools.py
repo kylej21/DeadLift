@@ -39,31 +39,29 @@ def fetch_gcp_logs(
     )
 
     entries = []
-    try:
-        page = next(iterator.pages)
-        for entry in page:
-            payload = entry.payload
-            if isinstance(payload, dict):
-                parsed_payload = payload
-            else:
-                parsed_payload = str(payload) if payload else ""
+    for entry in iterator:
+        payload = entry.payload
+        if isinstance(payload, dict):
+            parsed_payload = payload
+        else:
+            parsed_payload = str(payload) if payload else ""
 
-            entries.append({
-                "insert_id": entry.insert_id,
-                "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
-                "severity": entry.severity,
-                "log_name": entry.log_name,
-                "resource_type": entry.resource.type if entry.resource else None,
-                "resource_labels": dict(entry.resource.labels) if entry.resource else {},
-                "payload": parsed_payload,
-            })
-    except StopIteration:
-        pass
+        entries.append({
+            "insert_id": entry.insert_id,
+            "timestamp": entry.timestamp.isoformat() if entry.timestamp else None,
+            "severity": entry.severity,
+            "log_name": entry.log_name,
+            "resource_type": entry.resource.type if entry.resource else None,
+            "resource_labels": dict(entry.resource.labels) if entry.resource else {},
+            "payload": parsed_payload,
+        })
+        if len(entries) >= page_size:
+            break
 
     return {
         "entries": entries,
         "count": len(entries),
-        "next_page_token": iterator.next_page_token,
+        "next_page_token": getattr(iterator, "next_page_token", None),
     }
 
 @mcp.tool() 
@@ -82,5 +80,8 @@ def gcp_list_log_resource_types() -> list[str]:
 @mcp.tool() 
 def tool3(): pass 
 
-@mcp.tool() 
-def tool4(): pass 
+@mcp.tool()
+def tool4(): pass
+
+if __name__ == "__main__":
+    mcp.run() 
