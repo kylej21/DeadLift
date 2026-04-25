@@ -156,36 +156,7 @@ window.api.getBatches = async () => [];
 
 window.api.approveBatch = async (id) => ({ ok: true, id, status: 'fixed' });
 
-const __emptyAnalytics = (tasks) => {
-  tasks = tasks || [];
-  const total = tasks.length;
-  const approved = tasks.filter(t => t.status === 'approved').length;
-  const pending = tasks.filter(t => t.status === 'pending_approval').length;
-  const denied = tasks.filter(t => t.status === 'denied' || t.status === 'failed').length;
-  return {
-    kpis: {
-      dlqVolume24h: total,
-      autoFixed: approved,
-      awaitingApproval: pending,
-      unfixable: denied,
-      mttrBefore: '—',
-      mttrAfter: '—',
-      mttrDelta: 0,
-      estSavings30d: 0,
-    },
-    series: Array.from({ length: 24 }, (_, i) => ({ hour: i, dlq: 0, fixed: 0, awaiting: 0, unfixable: 0 })),
-    categories: [],
-    topics: [],
-  };
-};
-
-window.api.getAnalytics = async () => {
-  const orgId = window.session.orgId;
-  if (!orgId) return __emptyAnalytics([]);
-  const res = await fetch(`${PROXY_URL}/api/tasks?org_id=${orgId}`);
-  if (!res.ok) return __emptyAnalytics([]);
-  return __emptyAnalytics(await res.json());
-};
+window.api.getAnalytics = async () => null; // analytics derived from fixes in Dashboard
 
 window.api.getRCAReports = async () => [];
 

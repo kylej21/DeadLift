@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	"context"
@@ -7,30 +7,27 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"proxy/internal/mcp"
+	"proxy/internal/models"
+	"proxy/internal/pubsub"
+	"proxy/internal/store"
 )
 
-func allAutoRepublish(m map[string]bool) bool {
-	if len(m) == 0 {
-		return false
-	}
-	for _, v := range m {
-		if !v {
-			return false
-		}
-	}
-	return true
+// Worker polls each org's DLQ subscription and creates repair tasks.
+type Worker struct {
+	RepairSA string
+	Store    *store.Store
 }
 
-func startWorker(ctx context.Context) {
+func (w *Worker) Start(ctx context.Context) {
 	log.Println("worker: starting DLQ polling")
-	// Refresh orgs every 5 minutes to pick up new onboards without restarting.
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	active := map[string]context.CancelFunc{}
 
 	launch := func() {
-		users, err := getAllUsers(ctx)
+		users, err := w.Store.GetAllUsers(ctx)
 		if err != nil {
 			log.Printf("worker: failed to load orgs: %v", err)
 			return
@@ -39,7 +36,7 @@ func startWorker(ctx context.Context) {
 			if _, running := active[u.OrgID]; !running {
 				orgCtx, cancel := context.WithCancel(ctx)
 				active[u.OrgID] = cancel
-				go runOrgWorker(orgCtx, u)
+				go w.runOrgWorker(orgCtx, u)
 			}
 		}
 	}
@@ -55,7 +52,7 @@ func startWorker(ctx context.Context) {
 	}
 }
 
-func runOrgWorker(ctx context.Context, user User) {
+func (w *Worker) runOrgWorker(ctx context.Context, user models.User) {
 	log.Printf("worker[%s]: polling %s", user.OrgID, user.DLQSubscription)
 	for {
 		select {
@@ -64,14 +61,14 @@ func runOrgWorker(ctx context.Context, user User) {
 		default:
 		}
 
-		token, err := getRepairSAToken(ctx)
+		token, err := pubsub.GetRepairSAToken(ctx, w.RepairSA)
 		if err != nil {
 			log.Printf("worker[%s]: get token error: %v — retrying in 30s", user.OrgID, err)
 			time.Sleep(30 * time.Second)
 			continue
 		}
 
-		msgs, err := pullMessages(ctx, token, user.DLQSubscription)
+		msgs, err := pubsub.PullMessages(ctx, token, user.DLQSubscription)
 		if err != nil {
 			log.Printf("worker[%s]: pull error: %v — retrying in 10s", user.OrgID, err)
 			time.Sleep(10 * time.Second)
@@ -79,7 +76,7 @@ func runOrgWorker(ctx context.Context, user User) {
 		}
 
 		for _, msg := range msgs {
-			if err := processMessage(ctx, user, token, msg); err != nil {
+			if err := w.processMessage(ctx, user, token, msg); err != nil {
 				log.Printf("worker[%s]: process message %s error: %v", user.OrgID, msg.Message.MessageID, err)
 			}
 		}
@@ -90,11 +87,23 @@ func runOrgWorker(ctx context.Context, user User) {
 	}
 }
 
-func processMessage(ctx context.Context, user User, token string, msg pubsubMessage) error {
-	// Skip messages we already repaired — prevents feedback loops.
+func allAutoRepublish(m map[string]bool) bool {
+	if len(m) == 0 {
+		return false
+	}
+	for _, v := range m {
+		if !v {
+			return false
+		}
+	}
+	return true
+}
+
+func (w *Worker) processMessage(ctx context.Context, user models.User, token string, msg models.PubSubMessage) error {
+	// Skip messages already repaired by us to prevent feedback loops.
 	if msg.Message.Attributes["_deadlift_repaired"] == "true" {
 		log.Printf("worker[%s]: skipping already-repaired message %s", user.OrgID, msg.Message.MessageID)
-		_ = ackMessages(ctx, token, user.DLQSubscription, []string{msg.AckID})
+		_ = pubsub.AckMessages(ctx, token, user.DLQSubscription, []string{msg.AckID})
 		return nil
 	}
 
@@ -104,13 +113,13 @@ func processMessage(ctx context.Context, user User, token string, msg pubsubMess
 	}
 	rawPayload := string(rawBytes)
 
-	fixedPayload, err := callMCP(ctx, rawPayload)
+	fixedPayload, err := mcp.CallMCP(ctx, rawPayload)
 	if err != nil {
 		return err
 	}
 
 	taskID := uuid.New().String()
-	task := Task{
+	task := models.Task{
 		TaskID:       taskID,
 		OrgID:        user.OrgID,
 		MessageID:    msg.Message.MessageID,
@@ -122,12 +131,12 @@ func processMessage(ctx context.Context, user User, token string, msg pubsubMess
 		UpdatedAt:    time.Now(),
 	}
 
-	if err := createTask(ctx, task); err != nil {
+	if err := w.Store.CreateTask(ctx, task); err != nil {
 		return err
 	}
 
 	// Ack immediately — Firestore task is now the source of truth.
-	if err := ackMessages(ctx, token, user.DLQSubscription, []string{msg.AckID}); err != nil {
+	if err := pubsub.AckMessages(ctx, token, user.DLQSubscription, []string{msg.AckID}); err != nil {
 		log.Printf("worker[%s]: ack error: %v", user.OrgID, err)
 	}
 
@@ -137,12 +146,12 @@ func processMessage(ctx context.Context, user User, token string, msg pubsubMess
 			outAttrs[k] = v
 		}
 		outAttrs["_deadlift_repaired"] = "true"
-		if err := publishMessage(ctx, token, user.MainTopic, fixedPayload, outAttrs); err != nil {
+		if err := pubsub.PublishMessage(ctx, token, user.MainTopic, fixedPayload, outAttrs); err != nil {
 			log.Printf("worker[%s]: auto-publish error: %v", user.OrgID, err)
-			_ = updateTaskStatus(ctx, taskID, "failed")
+			_ = w.Store.UpdateTaskStatus(ctx, taskID, "failed")
 			return nil
 		}
-		_ = updateTaskStatus(ctx, taskID, "approved")
+		_ = w.Store.UpdateTaskStatus(ctx, taskID, "approved")
 		log.Printf("worker[%s]: auto-approved task %s", user.OrgID, taskID)
 	} else {
 		log.Printf("worker[%s]: task %s pending human approval", user.OrgID, taskID)

@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "proxy/onboarding/**"
+      - "proxy/**"
       - ".github/workflows/deploy-proxy.yml"
   pull_request:
     branches: [main]
     paths:
-      - "proxy/onboarding/**"
+      - "proxy/**"
       - ".github/workflows/deploy-proxy.yml"
 
 env:
@@ -45,7 +45,7 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v5
         with:
-          context: ./proxy/onboarding
+          context: ./proxy
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE }}:${{ github.sha }}

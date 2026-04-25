@@ -1,4 +1,4 @@
-package main
+package pubsub
 
 import (
 	"bytes"
@@ -9,19 +9,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"proxy/internal/models"
 )
 
-type pubsubMessage struct {
-	AckID   string `json:"ackId"`
-	Message struct {
-		Data        string            `json:"data"`
-		Attributes  map[string]string `json:"attributes"`
-		MessageID   string            `json:"messageId"`
-		PublishTime string            `json:"publishTime"`
-	} `json:"message"`
-}
-
-func getMetadataToken(ctx context.Context) (string, error) {
+func GetMetadataToken(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
 		"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", nil)
 	if err != nil {
@@ -42,8 +34,8 @@ func getMetadataToken(ctx context.Context) (string, error) {
 	return tr.AccessToken, nil
 }
 
-func getRepairSAToken(ctx context.Context) (string, error) {
-	metaToken, err := getMetadataToken(ctx)
+func GetRepairSAToken(ctx context.Context, repairSA string) (string, error) {
+	metaToken, err := GetMetadataToken(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -73,10 +65,9 @@ func getRepairSAToken(ctx context.Context) (string, error) {
 	return tr.AccessToken, nil
 }
 
-func pullMessages(ctx context.Context, token, subscription string) ([]pubsubMessage, error) {
+func PullMessages(ctx context.Context, token, subscription string) ([]models.PubSubMessage, error) {
 	url := fmt.Sprintf("https://pubsub.googleapis.com/v1/%s:pull", subscription)
-	body := `{"maxMessages":10}`
-	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(`{"maxMessages":10}`))
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +83,7 @@ func pullMessages(ctx context.Context, token, subscription string) ([]pubsubMess
 		return nil, fmt.Errorf("pull HTTP %d: %s", resp.StatusCode, b)
 	}
 	var result struct {
-		ReceivedMessages []pubsubMessage `json:"receivedMessages"`
+		ReceivedMessages []models.PubSubMessage `json:"receivedMessages"`
 	}
 	if err := json.Unmarshal(b, &result); err != nil {
 		return nil, err
@@ -100,7 +91,7 @@ func pullMessages(ctx context.Context, token, subscription string) ([]pubsubMess
 	return result.ReceivedMessages, nil
 }
 
-func ackMessages(ctx context.Context, token, subscription string, ackIDs []string) error {
+func AckMessages(ctx context.Context, token, subscription string, ackIDs []string) error {
 	url := fmt.Sprintf("https://pubsub.googleapis.com/v1/%s:acknowledge", subscription)
 	body, _ := json.Marshal(map[string][]string{"ackIds": ackIDs})
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
@@ -121,14 +112,15 @@ func ackMessages(ctx context.Context, token, subscription string, ackIDs []strin
 	return nil
 }
 
-func publishMessage(ctx context.Context, token, topic, data string, attributes map[string]string) error {
+func PublishMessage(ctx context.Context, token, topic, data string, attributes map[string]string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(data))
-	msg := map[string]interface{}{
-		"data":       encoded,
-		"attributes": attributes,
-	}
 	body, _ := json.Marshal(map[string]interface{}{
-		"messages": []interface{}{msg},
+		"messages": []interface{}{
+			map[string]interface{}{
+				"data":       encoded,
+				"attributes": attributes,
+			},
+		},
 	})
 	url := fmt.Sprintf("https://pubsub.googleapis.com/v1/%s:publish", topic)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
