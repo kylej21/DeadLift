@@ -87,7 +87,7 @@ func main() {
 	mux.HandleFunc("GET /api/onboard/callback", ob.HandleCallback)
 	mux.HandleFunc("GET /api/users", ob.HandleGetUser)
 
-	// Task management (DLQ repair & republish)
+	// Task management (DLQ repair & republish) comment change
 	mux.HandleFunc("GET /api/tasks", th.HandleList)
 	mux.HandleFunc("POST /api/tasks/{task_id}/approve", th.HandleApprove)
 	mux.HandleFunc("POST /api/tasks/{task_id}/deny", th.HandleDeny)
