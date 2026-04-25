@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"cloud.google.com/go/firestore"
@@ -21,6 +22,30 @@ var (
 	fsClient   *firestore.Client
 	stateStore sync.Map
 )
+
+func corsAllowed(origin string) bool {
+	if origin == clientURL {
+		return true
+	}
+	// Allow any localhost origin for local development
+	return strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:")
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if corsAllowed(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func main() {
 	ctx := context.Background()
@@ -45,5 +70,5 @@ func main() {
 	})
 
 	log.Printf("proxy listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	log.Fatal(http.ListenAndServe(":"+port, corsMiddleware(mux)))
 }

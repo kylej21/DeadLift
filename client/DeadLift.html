@@ -33,6 +33,20 @@
     // ============================================================
     // Router
     // ============================================================
+    const parseHash = (hash) => {
+      const raw = hash || '#/';
+      const qIdx = raw.indexOf('?');
+      const path = qIdx === -1 ? raw : raw.slice(0, qIdx);
+      const params = {};
+      if (qIdx !== -1) {
+        raw.slice(qIdx + 1).split('&').forEach(kv => {
+          const eq = kv.indexOf('=');
+          if (eq !== -1) params[decodeURIComponent(kv.slice(0, eq))] = decodeURIComponent(kv.slice(eq + 1));
+        });
+      }
+      return { path, params };
+    };
+
     const useRoute = () => {
       const [route, setRoute] = React.useState(location.hash || '#/');
       React.useEffect(() => {
@@ -48,11 +62,18 @@
       const tweaks = useTweaks(TWEAK_DEFAULTS);
       window.__tweakState = tweaks;
 
+      const { path, params } = parseHash(route);
+
+      // Store org_id in session when returning from OAuth
+      if (params.org_id && !window.session.orgId) {
+        window.session.orgId = params.org_id;
+      }
+
       let page;
-      if (route === '#/signin') page = <SignIn />;
-      else if (route === '#/signup') page = <SignUp />;
-      else if (route === '#/onboarding') page = <Onboarding />;
-      else if (route.startsWith('#/app')) page = <Dashboard />;
+      if (path === '#/signin') page = <SignIn />;
+      else if (path === '#/signup') page = <SignUp />;
+      else if (path === '#/onboarding') page = <Onboarding error={params.error} />;
+      else if (path.startsWith('#/app')) page = <Dashboard />;
       else page = <Landing />;
 
       return (

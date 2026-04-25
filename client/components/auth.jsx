@@ -28,89 +28,25 @@ const AuthShell = ({ title, subtitle, children, footer }) => (
   </div>
 );
 
-const SignIn = () => {
-  const [email, setEmail] = React.useState('sre@acme.com');
-  const [password, setPassword] = React.useState('password123');
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState(null);
+const SignIn = () => (
+  <AuthShell title="Welcome back" subtitle="Sign in to your DeadLift dashboard."
+    footer={<>New here? <a href="#/signup" className="link">Create an account</a></>}>
+    <button className="btn" style={{ width: '100%', background: '#fff', color: '#0a0b0d', borderColor: '#fff' }}
+      onClick={() => { window.session.setUser({ email: 'sre@acme.com', name: 'sre', org: 'acme-payments' }); location.hash = '#/app'; }}>
+      <GoogleIcon /> Continue with Google
+    </button>
+  </AuthShell>
+);
 
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!email.includes('@')) { setError('Enter a valid email.'); return; }
-    setLoading(true);
-    const res = await window.api.signIn({ email, password });
-    setLoading(false);
-    if (res.ok) { window.session.setUser(res.user); location.hash = '#/app'; }
-    else setError('Sign in failed.');
-  };
-
-  return (
-    <AuthShell title="Welcome back" subtitle="Sign in to your DeadLift dashboard."
-      footer={<>New here? <a href="#/signup" className="link">Create an account</a></>}>
-      <form onSubmit={submit}>
-        <button type="button" className="btn" style={{ width: '100%', marginBottom: 18, background: '#fff', color: '#0a0b0d', borderColor: '#fff' }}
-          onClick={() => { window.session.setUser({ email: 'sre@acme.com', name: 'sre', org: 'acme-payments' }); location.hash = '#/app'; }}>
-          <GoogleIcon /> Continue with Google
-        </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 18px', fontSize: 11, color: 'var(--text-3)' }}>
-          <div className="divider" /> OR <div className="divider" />
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <label className="lbl">Email</label>
-          <input className="field" type="email" value={email} onChange={e => setEmail(e.target.value)} />
-        </div>
-        <div style={{ marginBottom: 18 }}>
-          <label className="lbl">Password</label>
-          <input className="field" type="password" value={password} onChange={e => setPassword(e.target.value)} />
-        </div>
-        {error && <div style={{ marginBottom: 14, padding: '8px 10px', borderRadius: 7, background: 'var(--red-bg)', border: '1px solid var(--red-line)', color: 'var(--red)', fontSize: 12.5 }}>{error}</div>}
-        <button className="btn btn-primary" style={{ width: '100%' }} disabled={loading} type="submit">
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
-    </AuthShell>
-  );
-};
-
-const SignUp = () => {
-  const [email, setEmail] = React.useState('');
-  const [password, setPassword] = React.useState('');
-  const [loading, setLoading] = React.useState(false);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    const res = await window.api.signUp({ email, password });
-    setLoading(false);
-    if (res.ok) { window.session.setUser(res.user); location.hash = '#/onboarding'; }
-  };
-
-  return (
-    <AuthShell title="Get started with DeadLift" subtitle="Create an account, then connect your GCP project."
-      footer={<>Already have an account? <a href="#/signin" className="link">Sign in</a></>}>
-      <form onSubmit={submit}>
-        <button type="button" className="btn" style={{ width: '100%', marginBottom: 18, background: '#fff', color: '#0a0b0d', borderColor: '#fff' }}
-          onClick={() => { window.session.setUser({ email: 'new@acme.com', name: 'new', org: null }); location.hash = '#/onboarding'; }}>
-          <GoogleIcon /> Sign up with Google
-        </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 18px', fontSize: 11, color: 'var(--text-3)' }}>
-          <div className="divider" /> OR <div className="divider" />
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <label className="lbl">Email</label>
-          <input className="field" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" />
-        </div>
-        <div style={{ marginBottom: 18 }}>
-          <label className="lbl">Password</label>
-          <input className="field" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 8 characters" />
-        </div>
-        <button className="btn btn-primary" style={{ width: '100%' }} disabled={loading} type="submit">
-          {loading ? 'Creating account…' : 'Create account'}
-        </button>
-        <p className="muted" style={{ fontSize: 11.5, marginTop: 14, textAlign: 'center' }}>By signing up you agree to our Terms and Privacy Policy.</p>
-      </form>
-    </AuthShell>
-  );
-};
+const SignUp = () => (
+  <AuthShell title="Get started with DeadLift" subtitle="Connect your GCP project and start repairing dead letters automatically."
+    footer={<>Already have an account? <a href="#/signin" className="link">Sign in</a></>}>
+    <button className="btn" style={{ width: '100%', background: '#fff', color: '#0a0b0d', borderColor: '#fff' }}
+      onClick={() => { window.session.setUser({ email: 'new@acme.com', name: 'new', org: null }); location.hash = '#/onboarding'; }}>
+      <GoogleIcon /> Sign up with Google
+    </button>
+    <p className="muted" style={{ fontSize: 11.5, marginTop: 14, textAlign: 'center' }}>By signing up you agree to our Terms and Privacy Policy.</p>
+  </AuthShell>
+);
 
 Object.assign(window, { SignIn, SignUp, GoogleIcon });
