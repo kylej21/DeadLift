@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -128,6 +129,22 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 		log.Printf("health check failed: %v", err)
 		redirect("health_check_failed: " + err.Error())
 		return
+	}
+
+	// Set up BigQuery streaming subscription on the customer's main topic.
+	// Non-fatal — log and continue if it fails.
+	projectNumber, err := getProjectNumber(r.Context(), accessToken, payload.ProjectID)
+	if err != nil {
+		log.Printf("bigquery setup: could not get project number: %v", err)
+	} else {
+		pubsubSA := fmt.Sprintf("service-%s@gcp-sa-pubsub.iam.gserviceaccount.com", projectNumber)
+		if err := grantPubSubSABQAccess(r.Context(), pubsubSA); err != nil {
+			log.Printf("bigquery setup: grant access error: %v", err)
+		} else if err := createBQSubscription(r.Context(), accessToken, payload.ProjectID, payload.MainTopic, payload.OrgID); err != nil {
+			log.Printf("bigquery setup: create subscription error: %v", err)
+		} else {
+			log.Printf("bigquery setup: streaming subscription created for org %s", payload.OrgID)
+		}
 	}
 
 	user := User{
