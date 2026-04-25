@@ -81,7 +81,9 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		"prompt":        {"select_account"},
 	}
 
-	json.NewEncoder(w).Encode(map[string]string{
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	enc.Encode(map[string]string{
 		"oauth_url": googleAuthURL + "?" + params.Encode(),
 	})
 }
