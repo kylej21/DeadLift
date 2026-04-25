@@ -32,8 +32,8 @@ resource "google_bigquery_table" "success_logs" {
 
 # Proxy SA needs bigquery.dataEditor on the dataset so it can
 # dynamically add each customer's Pub/Sub service agent during onboarding.
-resource "google_bigquery_dataset_iam_member" "proxy_bq_editor" {
+resource "google_bigquery_dataset_iam_member" "proxy_bq_owner" {
   dataset_id = google_bigquery_dataset.deadlift.dataset_id
-  role       = "roles/bigquery.dataEditor"
+  role       = "roles/bigquery.dataOwner"
   member     = "serviceAccount:${google_service_account.proxy.email}"
 }

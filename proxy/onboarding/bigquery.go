@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // getProjectNumber resolves a GCP project ID → project number using the customer's token.
@@ -72,20 +73,27 @@ func grantPubSubSABQAccess(ctx context.Context, pubsubSAEmail string) error {
 		return err
 	}
 
-	// Add the new member if not already present.
+	// Add both roles required by Pub/Sub BigQuery subscriptions.
 	access, _ := dataset["access"].([]interface{})
-	newEntry := map[string]interface{}{
-		"role":      "roles/bigquery.dataEditor",
-		"iamMember": "serviceAccount:" + pubsubSAEmail,
+	newEntries := []map[string]interface{}{
+		{"role": "roles/bigquery.dataEditor", "iamMember": "serviceAccount:" + pubsubSAEmail},
+		{"role": "roles/bigquery.metadataViewer", "iamMember": "serviceAccount:" + pubsubSAEmail},
 	}
-	for _, entry := range access {
-		if e, ok := entry.(map[string]interface{}); ok {
-			if e["iamMember"] == newEntry["iamMember"] {
-				return nil // already granted
+	for _, newEntry := range newEntries {
+		found := false
+		for _, entry := range access {
+			if e, ok := entry.(map[string]interface{}); ok {
+				if e["iamMember"] == newEntry["iamMember"] && e["role"] == newEntry["role"] {
+					found = true
+					break
+				}
 			}
 		}
+		if !found {
+			access = append(access, newEntry)
+		}
 	}
-	dataset["access"] = append(access, newEntry)
+	dataset["access"] = access
 
 	// PATCH the dataset with updated access.
 	patchBody, _ := json.Marshal(map[string]interface{}{"access": dataset["access"]})
@@ -118,7 +126,7 @@ func createBQSubscription(ctx context.Context, token, customerProjectID, mainTop
 	}
 
 	subName := fmt.Sprintf("projects/%s/subscriptions/deadlift-analytics-%s", customerProjectID, orgID)
-	table := fmt.Sprintf("projects/%s/datasets/deadlift/tables/success_logs", gcpProject)
+	table := fmt.Sprintf("%s:deadlift.success_logs", gcpProject)
 
 	body, _ := json.Marshal(map[string]interface{}{
 		"topic": topicResource,
@@ -128,24 +136,38 @@ func createBQSubscription(ctx context.Context, token, customerProjectID, mainTop
 		},
 	})
 
-	req, err := http.NewRequestWithContext(ctx, "PUT",
-		"https://pubsub.googleapis.com/v1/"+subName,
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return err
+	// Retry with backoff — IAM propagation after grantPubSubSABQAccess can take ~30s.
+	var lastErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "PUT",
+			"https://pubsub.googleapis.com/v1/"+subName,
+			bytes.NewReader(body),
+		)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		// 200 or 409 (already exists) are both success.
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusConflict {
+			return nil
+		}
+		lastErr = fmt.Errorf("create BQ subscription HTTP %d: %s", resp.StatusCode, b)
+		time.Sleep(time.Duration(attempt*15) * time.Second)
+		// Re-encode body for next attempt.
+		body, _ = json.Marshal(map[string]interface{}{
+			"topic": topicResource,
+			"bigqueryConfig": map[string]interface{}{
+				"table":         table,
+				"writeMetadata": true,
+			},
+		})
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	// 409 = already exists, that's fine.
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
-		return fmt.Errorf("create BQ subscription HTTP %d: %s", resp.StatusCode, b)
-	}
-	return nil
+	return lastErr
 }
