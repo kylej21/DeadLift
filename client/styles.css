@@ -247,7 +247,7 @@ h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; margin: 0; color: va
 }
 
 /* ===== Tabs ===== */
-.tab-bar { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+.tab-bar { display: flex; gap: 2px; border-bottom: 1px solid var(--line); width: 100%; overflow-x: auto; flex-wrap: nowrap; }
 .tab {
   padding: 10px 14px; font-size: 13.5px; color: var(--text-3);
   background: transparent; border: none; border-bottom: 2px solid transparent;

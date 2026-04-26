@@ -114,6 +114,18 @@ resource "google_cloud_run_v2_service" "proxy" {
         name  = "VLLM_MODEL"
         value = var.vllm_model
       }
+      env {
+        name  = "GITHUB_CLIENT_ID"
+        value = var.github_client_id
+      }
+      env {
+        name  = "GITHUB_CLIENT_SECRET"
+        value = var.github_client_secret
+      }
+      env {
+        name  = "GITHUB_REDIRECT_URI"
+        value = var.github_redirect_uri
+      }
     }
   }
 
