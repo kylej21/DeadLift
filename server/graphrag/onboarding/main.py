@@ -1,9 +1,15 @@
 import logging
+import os
 import subprocess
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
+
+load_dotenv(Path(__file__).parent / ".env")
+_env_mode = os.environ.get("ENV_MODE", "openai")
+load_dotenv(Path(__file__).parent / f".env.{_env_mode}")
 
 from .jobs.manager import JobStatus, job_manager
 from .pipeline.clone import clone_repo, get_changed_files, get_current_sha
