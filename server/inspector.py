@@ -15,7 +15,7 @@ from llm_tool_agent import run_tool_agent, mcp_tools_to_openai_tools
 
 load_dotenv()
 
-SERVER = str(Path(__file__).parent / "mcp_server.py")
+SERVER = str(Path(__file__).parent / "mcp_tools.py")
 E2E_WORKSPACE = str(Path(__file__).parent / "e2e-test")
 
 SYSTEM_PROMPT = """You are an infrastructure and data analyst with access to three capabilities via tools:
