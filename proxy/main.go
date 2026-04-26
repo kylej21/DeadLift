@@ -99,10 +99,10 @@ func main() {
 	mux.HandleFunc("POST /api/tasks/{task_id}/approve", th.HandleApprove)
 	mux.HandleFunc("POST /api/tasks/{task_id}/deny", th.HandleDeny)
 
-	// Batch management
+	// Batch management (derived from task grouping by error_class — no separate collection)
 	mux.HandleFunc("GET /api/batches", bh.HandleList)
-	mux.HandleFunc("POST /api/batches/{batch_id}/approve", bh.HandleApprove)
-	mux.HandleFunc("POST /api/batches/{batch_id}/deny", bh.HandleDeny)
+	mux.HandleFunc("POST /api/batches/{error_class}/approve", bh.HandleApprove)
+	mux.HandleFunc("POST /api/batches/{error_class}/deny", bh.HandleDeny)
 
 	// GraphRAG context ingestion
 	mux.HandleFunc("POST /api/graphrag/onboard", gr.HandleOnboard)
