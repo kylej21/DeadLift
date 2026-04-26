@@ -9,8 +9,16 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"proxy/internal/models"
+)
+
+var (
+	repairTokenMu     sync.Mutex
+	repairTokenValue  string
+	repairTokenExpiry time.Time
 )
 
 func GetMetadataToken(ctx context.Context) (string, error) {
@@ -35,6 +43,14 @@ func GetMetadataToken(ctx context.Context) (string, error) {
 }
 
 func GetRepairSAToken(ctx context.Context, repairSA string) (string, error) {
+	repairTokenMu.Lock()
+	defer repairTokenMu.Unlock()
+
+	// Reuse the cached token until 5 minutes before it expires.
+	if repairTokenValue != "" && time.Now().Before(repairTokenExpiry.Add(-5*time.Minute)) {
+		return repairTokenValue, nil
+	}
+
 	metaToken, err := GetMetadataToken(ctx)
 	if err != nil {
 		return "", err
@@ -58,11 +74,18 @@ func GetRepairSAToken(ctx context.Context, repairSA string) (string, error) {
 	}
 	var tr struct {
 		AccessToken string `json:"accessToken"`
+		ExpireTime  string `json:"expireTime"`
 	}
 	if err := json.Unmarshal(b, &tr); err != nil {
 		return "", err
 	}
-	return tr.AccessToken, nil
+	repairTokenValue = tr.AccessToken
+	if expiry, err := time.Parse(time.RFC3339, tr.ExpireTime); err == nil {
+		repairTokenExpiry = expiry
+	} else {
+		repairTokenExpiry = time.Now().Add(55 * time.Minute)
+	}
+	return repairTokenValue, nil
 }
 
 func PullMessages(ctx context.Context, token, subscription string) ([]models.PubSubMessage, error) {
