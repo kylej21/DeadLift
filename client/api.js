@@ -50,13 +50,24 @@ const __subscriptionLabel = (s) => {
   return parts[parts.length - 1] || s;
 };
 
+const __ERROR_CLASS_LABELS = {
+  schema_drift:   'Schema drift',
+  type_mismatch:  'Type mismatch',
+  malformed_json: 'Malformed JSON',
+  missing_field:  'Missing field',
+  encoding:       'Encoding error',
+  unknown:        'Unknown',
+};
+const __errorClassLabel = (c) => __ERROR_CLASS_LABELS[c] || (c || 'Unknown').replace(/_/g, ' ');
+
 const __taskToFix = (task) => ({
   id: task.task_id,
   status: task.status === 'pending_approval' ? 'pending'
         : task.status === 'approved' ? 'fixed'
         : task.status === 'failed' ? 'denied'
         : task.status,
-  category: 'AI Repair',
+  category: __errorClassLabel(task.error_class),
+  errorClass: task.error_class || '',
   confidence: 0.85,
   subscription: task.attributes?.dlq_subscription || task.org_id,
   topic: task.attributes?.main_topic || '—',
@@ -64,24 +75,25 @@ const __taskToFix = (task) => ({
   createdAtRaw: task.created_at || null,
   fixedAt: task.status === 'approved' ? __timeAgo(task.updated_at) : null,
   error: `Pub/Sub message ${task.message_id}`,
-  batchId: task.batch_id || null,
   batch: null,
   before: __tryFormat(task.raw_payload),
   after: __tryFormat(task.fixed_payload),
   sources: [],
 });
 
+// Batches are derived server-side by grouping tasks on error_class — no separate collection.
 const __batchToCard = (batch) => ({
-  id: batch.batch_id,
-  title: `DLQ batch — ${__subscriptionLabel(batch.subscription)}`,
-  rootCause: `${batch.task_count} messages from subscription "${__subscriptionLabel(batch.subscription)}" are pending repair and share the same origin topic.`,
-  affectedCount: batch.task_count,
-  affectedTopics: batch.topic ? [__subscriptionLabel(batch.topic)] : [],
-  category: 'Batch Repair',
+  id: batch.error_class,
+  title: __errorClassLabel(batch.error_class),
+  rootCause: `${batch.pending_count} message${batch.pending_count === 1 ? '' : 's'} classified as "${__errorClassLabel(batch.error_class)}" are pending repair.`,
+  affectedCount: batch.pending_count,
+  totalCount: batch.total_count,
+  affectedTopics: [],
+  category: __errorClassLabel(batch.error_class),
   confidence: 0.85,
-  status: batch.status === 'approved' ? 'fixed' : batch.status,
+  status: batch.status === 'pending' ? 'pending' : 'fixed',
   firstSeen: __timeAgo(batch.first_seen),
-  fixSummary: `Apply AI-proposed fixes to all ${batch.task_count} queued messages and republish to main topic.`,
+  fixSummary: `Apply AI-proposed fixes to all ${batch.pending_count} pending messages and republish to main topic.`,
 });
 
 // ---------- ONBOARDING ----------
@@ -182,16 +194,24 @@ window.api.getBatches = async () => {
   return (batches || []).map(__batchToCard);
 };
 
-window.api.approveBatch = async (id) => {
-  const res = await fetch(`${PROXY_URL}/api/batches/${id}/approve`, { method: 'POST' });
+window.api.approveBatch = async (errorClass) => {
+  const orgId = window.session.orgId;
+  const res = await fetch(
+    `${PROXY_URL}/api/batches/${encodeURIComponent(errorClass)}/approve?org_id=${orgId}`,
+    { method: 'POST' }
+  );
   if (!res.ok) throw new Error(await res.text());
-  return { ok: true, id, status: 'fixed' };
+  return { ok: true, id: errorClass, status: 'fixed' };
 };
 
-window.api.denyBatch = async (id) => {
-  const res = await fetch(`${PROXY_URL}/api/batches/${id}/deny`, { method: 'POST' });
+window.api.denyBatch = async (errorClass) => {
+  const orgId = window.session.orgId;
+  const res = await fetch(
+    `${PROXY_URL}/api/batches/${encodeURIComponent(errorClass)}/deny?org_id=${orgId}`,
+    { method: 'POST' }
+  );
   if (!res.ok) throw new Error(await res.text());
-  return { ok: true, id, status: 'denied' };
+  return { ok: true, id: errorClass, status: 'denied' };
 };
 
 window.api.getAnalytics = async () => null; // analytics derived from fixes in Dashboard

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"proxy/internal/pubsub"
 	"proxy/internal/store"
@@ -14,35 +15,91 @@ type Handler struct {
 	Store    *store.Store
 }
 
+// BatchSummary is derived at query time by grouping tasks on error_class.
+// No separate Firestore collection — batches are always in sync with task state.
+type BatchSummary struct {
+	ErrorClass   string    `json:"error_class"`
+	PendingCount int       `json:"pending_count"`
+	TotalCount   int       `json:"total_count"`
+	FirstSeen    time.Time `json:"first_seen"`
+	Status       string    `json:"status"` // "pending" | "resolved"
+}
+
 func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 	orgID := r.URL.Query().Get("org_id")
 	if orgID == "" {
 		http.Error(w, `{"error":"org_id required"}`, http.StatusBadRequest)
 		return
 	}
-	batches, err := h.Store.ListBatchesByOrg(r.Context(), orgID)
+
+	tasks, err := h.Store.ListTasksByOrg(r.Context(), orgID)
 	if err != nil {
-		log.Printf("list batches error: %v", err)
+		log.Printf("batches list: %v", err)
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
+
+	user, _ := h.Store.GetUserByOrgID(r.Context(), orgID)
+	threshold := 2
+	if user != nil && user.BatchingThreshold > 0 {
+		threshold = user.BatchingThreshold
+	}
+
+	type group struct {
+		pending   int
+		total     int
+		firstSeen time.Time
+	}
+	groups := map[string]*group{}
+	for _, t := range tasks {
+		if t.ErrorClass == "" {
+			continue
+		}
+		g, ok := groups[t.ErrorClass]
+		if !ok {
+			g = &group{firstSeen: t.CreatedAt}
+			groups[t.ErrorClass] = g
+		}
+		g.total++
+		if t.Status == "pending_approval" {
+			g.pending++
+		}
+		if t.CreatedAt.Before(g.firstSeen) {
+			g.firstSeen = t.CreatedAt
+		}
+	}
+
+	summaries := make([]BatchSummary, 0, len(groups))
+	for class, g := range groups {
+		if g.total < threshold {
+			continue
+		}
+		status := "resolved"
+		if g.pending > 0 {
+			status = "pending"
+		}
+		summaries = append(summaries, BatchSummary{
+			ErrorClass:   class,
+			PendingCount: g.pending,
+			TotalCount:   g.total,
+			FirstSeen:    g.firstSeen,
+			Status:       status,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(batches)
+	json.NewEncoder(w).Encode(summaries)
 }
 
 func (h *Handler) HandleApprove(w http.ResponseWriter, r *http.Request) {
-	batchID := r.PathValue("batch_id")
-	batch, err := h.Store.GetBatch(r.Context(), batchID)
-	if err != nil {
-		http.Error(w, `{"error":"batch not found"}`, http.StatusNotFound)
-		return
-	}
-	if batch.Status != "pending" {
-		http.Error(w, `{"error":"batch is not pending"}`, http.StatusBadRequest)
+	errorClass := r.PathValue("error_class")
+	orgID := r.URL.Query().Get("org_id")
+	if orgID == "" {
+		http.Error(w, `{"error":"org_id required"}`, http.StatusBadRequest)
 		return
 	}
 
-	user, err := h.Store.GetUserByOrgID(r.Context(), batch.OrgID)
+	user, err := h.Store.GetUserByOrgID(r.Context(), orgID)
 	if err != nil {
 		http.Error(w, `{"error":"org not found"}`, http.StatusNotFound)
 		return
@@ -55,16 +112,16 @@ func (h *Handler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tasks, err := h.Store.GetTasksByBatch(r.Context(), batchID)
+	tasks, err := h.Store.ListTasksByOrg(r.Context(), orgID)
 	if err != nil {
-		log.Printf("batch approve: get tasks error: %v", err)
+		log.Printf("batch approve: list tasks error: %v", err)
 		http.Error(w, `{"error":"could not load tasks"}`, http.StatusInternalServerError)
 		return
 	}
 
-	failed := 0
+	published, failed := 0, 0
 	for _, task := range tasks {
-		if task.Status != "pending_approval" {
+		if task.ErrorClass != errorClass || task.Status != "pending_approval" {
 			continue
 		}
 		outAttrs := make(map[string]string, len(task.Attributes)+1)
@@ -85,51 +142,38 @@ func (h *Handler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		_ = h.Store.UpdateTaskStatus(r.Context(), task.TaskID, "approved")
+		published++
 	}
 
-	newStatus := "approved"
-	if failed > 0 && failed == len(tasks) {
-		newStatus = "failed"
-	}
-	if err := h.Store.UpdateBatchStatus(r.Context(), batchID, newStatus); err != nil {
-		log.Printf("batch approve: update batch status error: %v", err)
-	}
-
-	log.Printf("batch approve: batch %s — %d tasks published, %d failed", batchID, len(tasks)-failed, failed)
+	log.Printf("batch approve: error_class=%s org=%s published=%d failed=%d", errorClass, orgID, published, failed)
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "published": len(tasks) - failed, "failed": failed})
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "published": published, "failed": failed})
 }
 
 func (h *Handler) HandleDeny(w http.ResponseWriter, r *http.Request) {
-	batchID := r.PathValue("batch_id")
-	batch, err := h.Store.GetBatch(r.Context(), batchID)
-	if err != nil {
-		http.Error(w, `{"error":"batch not found"}`, http.StatusNotFound)
-		return
-	}
-	if batch.Status != "pending" {
-		http.Error(w, `{"error":"batch is not pending"}`, http.StatusBadRequest)
+	errorClass := r.PathValue("error_class")
+	orgID := r.URL.Query().Get("org_id")
+	if orgID == "" {
+		http.Error(w, `{"error":"org_id required"}`, http.StatusBadRequest)
 		return
 	}
 
-	tasks, err := h.Store.GetTasksByBatch(r.Context(), batchID)
+	tasks, err := h.Store.ListTasksByOrg(r.Context(), orgID)
 	if err != nil {
-		log.Printf("batch deny: get tasks error: %v", err)
+		log.Printf("batch deny: list tasks error: %v", err)
 		http.Error(w, `{"error":"could not load tasks"}`, http.StatusInternalServerError)
 		return
 	}
 
+	denied := 0
 	for _, task := range tasks {
-		if task.Status == "pending_approval" {
+		if task.ErrorClass == errorClass && task.Status == "pending_approval" {
 			_ = h.Store.UpdateTaskStatus(r.Context(), task.TaskID, "denied")
+			denied++
 		}
 	}
 
-	if err := h.Store.UpdateBatchStatus(r.Context(), batchID, "denied"); err != nil {
-		log.Printf("batch deny: update batch status error: %v", err)
-	}
-
-	log.Printf("batch deny: batch %s denied (%d tasks)", batchID, len(tasks))
+	log.Printf("batch deny: error_class=%s org=%s denied=%d", errorClass, orgID, denied)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"ok":true}`))
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "denied": denied})
 }

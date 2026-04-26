@@ -25,22 +25,10 @@ type Task struct {
 	RawPayload   string            `firestore:"raw_payload"   json:"raw_payload"`
 	Attributes   map[string]string `firestore:"attributes"    json:"attributes"`
 	FixedPayload string            `firestore:"fixed_payload" json:"fixed_payload"`
-	BatchID      string            `firestore:"batch_id"      json:"batch_id"`
+	ErrorClass   string            `firestore:"error_class"   json:"error_class"`
 	Status       string            `firestore:"status"        json:"status"` // pending_approval | approved | denied | failed
 	CreatedAt    time.Time         `firestore:"created_at"    json:"created_at"`
 	UpdatedAt    time.Time         `firestore:"updated_at"    json:"updated_at"`
-}
-
-type Batch struct {
-	BatchID      string    `firestore:"batch_id"      json:"batch_id"`
-	OrgID        string    `firestore:"org_id"        json:"org_id"`
-	Subscription string    `firestore:"subscription"  json:"subscription"`
-	Topic        string    `firestore:"topic"         json:"topic"`
-	TaskIDs      []string  `firestore:"task_ids"      json:"task_ids"`
-	TaskCount    int       `firestore:"task_count"    json:"task_count"`
-	Status       string    `firestore:"status"        json:"status"` // pending | approved | denied
-	FirstSeen    time.Time `firestore:"first_seen"    json:"first_seen"`
-	UpdatedAt    time.Time `firestore:"updated_at"    json:"updated_at"`
 }
 
 type StatePayload struct {
