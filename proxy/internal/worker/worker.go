@@ -6,11 +6,12 @@ import (
 	"log"
 	"time"
 
-	"github.com/google/uuid"
 	"proxy/internal/mcp"
 	"proxy/internal/models"
 	"proxy/internal/pubsub"
 	"proxy/internal/store"
+
+	"github.com/google/uuid"
 )
 
 // Worker polls each org's DLQ subscription and creates repair tasks.
@@ -101,7 +102,7 @@ func allAutoRepublish(m map[string]bool) bool {
 }
 
 func (w *Worker) processMessage(ctx context.Context, user models.User, token string, msg models.PubSubMessage) error {
-	// Skip messages already repaired by us to prevent feedback loops.
+	// Skip messages already repaired by us to prevent feedback loops. redeploy trigger
 	if msg.Message.Attributes["_deadlift_repaired"] == "true" {
 		log.Printf("worker[%s]: skipping already-repaired message %s", user.OrgID, msg.Message.MessageID)
 		_ = pubsub.AckMessages(ctx, token, user.DLQSubscription, []string{msg.AckID})
