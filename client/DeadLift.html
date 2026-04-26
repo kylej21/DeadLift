@@ -93,6 +93,30 @@
       );
     };
 
+    // ============================================================
+    // Toast
+    // ============================================================
+    let __toastTimer = null;
+    window.showToast = (msg, type = 'success') => {
+      let el = document.getElementById('__toast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = '__toast';
+        el.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-12px);z-index:9999;padding:10px 20px;border-radius:8px;font-size:13.5px;font-weight:500;pointer-events:none;opacity:0;transition:opacity 200ms,transform 200ms;white-space:nowrap;';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg;
+      el.style.background = type === 'error' ? 'var(--red)' : 'oklch(0.55 0.18 145)';
+      el.style.color = '#fff';
+      el.style.opacity = '1';
+      el.style.transform = 'translateX(-50%) translateY(0)';
+      clearTimeout(__toastTimer);
+      __toastTimer = setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(-50%) translateY(-12px)';
+      }, 3000);
+    };
+
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
   </script>
 </body>

@@ -139,14 +139,37 @@ const RCATab = ({ reports }) => {
   );
 };
 
+const __parseRCASections = (text) => {
+  if (!text) return [];
+  // Split on lines that start with a number+dot (e.g. "1. What went wrong")
+  const sections = [];
+  const lines = text.split('\n');
+  let current = null;
+  for (const line of lines) {
+    const match = line.match(/^(\d+)\.\s+(.+)/);
+    if (match) {
+      if (current) sections.push(current);
+      current = { heading: match[2], body: [] };
+    } else if (current) {
+      current.body.push(line);
+    } else {
+      // preamble before first section
+      sections.push({ heading: null, body: [line] });
+    }
+  }
+  if (current) sections.push(current);
+  return sections;
+};
+
 const RCACard = ({ report }) => {
   const [expanded, setExpanded] = React.useState(true);
   const date = report.created_at ? new Date(report.created_at).toLocaleString() : '—';
+  const sections = __parseRCASections(report.analysis);
   return (
     <div className="surface" style={{ overflow: 'hidden' }}>
       <div onClick={() => setExpanded(!expanded)} style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span className="pill">{report.error_class || 'unknown'}</span>
             <span className="mono muted" style={{ fontSize: 11 }}>{report.message_id}</span>
           </div>
@@ -157,8 +180,17 @@ const RCACard = ({ report }) => {
         </svg>
       </div>
       {expanded && (
-        <div style={{ borderTop: '1px solid var(--line)', padding: '14px 18px' }}>
-          <pre style={{ fontSize: 12.5, lineHeight: 1.65, whiteSpace: 'pre-wrap', color: 'var(--text-2)', margin: 0 }}>{report.analysis}</pre>
+        <div style={{ borderTop: '1px solid var(--line)', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {sections.map((s, i) => (
+            <div key={i} style={{ background: 'var(--surface-1)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px' }}>
+              {s.heading && (
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.heading}</div>
+              )}
+              <p style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--text-2)', margin: 0, whiteSpace: 'pre-wrap' }}>
+                {s.body.join('\n').trim()}
+              </p>
+            </div>
+          ))}
         </div>
       )}
     </div>
