@@ -1,8 +1,15 @@
+import logging
+import os
 import subprocess
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel
+
+load_dotenv(Path(__file__).parent / ".env")
+_env_mode = os.environ.get("ENV_MODE", "openai")
+load_dotenv(Path(__file__).parent / f".env.{_env_mode}")
 
 from .jobs.manager import JobStatus, job_manager
 from .pipeline.clone import clone_repo, get_changed_files, get_current_sha
@@ -11,6 +18,12 @@ from .pipeline.index import run_index, run_update
 from .pipeline.preprocess import preprocess_all, preprocess_files
 from .pipeline.tune import run_prompt_tune
 from storage import ClientState, create_storage
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
+)
+log = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -27,12 +40,14 @@ class UpdateRequest(BaseModel):
 
 
 def _run_onboard(job_id: str, repo_url: str, client_id: str):
+    log.info("[%s] Onboard started: client=%s repo=%s", job_id, client_id, repo_url)
     try:
         job_manager.update_job(job_id, JobStatus.RUNNING, "Cloning repository")
-        repo_path = clone_repo(repo_url, str(Path("data/repos") / client_id))
+        repo_path = clone_repo(repo_url, str(Path("kb/repos") / client_id))
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Preprocessing files")
         graphrag_root = str(storage.get_root(client_id))
+        log.info("[%s] graphrag root: %s", job_id, graphrag_root)
         configure(graphrag_root)
         preprocess_all(repo_path, str(Path(graphrag_root) / "input"))
 
@@ -48,21 +63,25 @@ def _run_onboard(job_id: str, repo_url: str, client_id: str):
             client_id=client_id,
             last_indexed_sha=sha,
         ))
-
+        log.info("[%s] Onboard complete: client=%s sha=%s", job_id, client_id, sha)
         job_manager.update_job(job_id, JobStatus.COMPLETED, "Knowledge base ready")
     except Exception as exc:
+        log.exception("[%s] Onboard failed: %s", job_id, exc)
         job_manager.update_job(job_id, JobStatus.FAILED, str(exc))
 
 
 def _run_update(job_id: str, client_id: str):
+    log.info("[%s] Update started: client=%s", job_id, client_id)
     try:
         state = storage.get_state(client_id)
         if state is None:
+            log.error("[%s] Client not found: %s", job_id, client_id)
             job_manager.update_job(job_id, JobStatus.FAILED, f"Client {client_id} not found")
             return
 
-        repo_path = str(Path("data/repos") / client_id)
+        repo_path = str(Path("kb/repos") / client_id)
         graphrag_root = str(storage.get_root(client_id))
+        log.info("[%s] Fetching repo: %s", job_id, repo_path)
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Fetching latest changes")
         subprocess.run(["git", "-C", repo_path, "fetch", "origin"], check=True)
@@ -70,6 +89,7 @@ def _run_update(job_id: str, client_id: str):
 
         changed_files = get_changed_files(repo_path, state.last_indexed_sha)
         if not changed_files:
+            log.info("[%s] No changes detected, skipping update", job_id)
             job_manager.update_job(job_id, JobStatus.COMPLETED, "No changes detected")
             return
 
@@ -83,9 +103,10 @@ def _run_update(job_id: str, client_id: str):
         sha = get_current_sha(repo_path)
         state.last_indexed_sha = sha
         storage.save_state(state)
-
+        log.info("[%s] Update complete: client=%s sha=%s", job_id, client_id, sha)
         job_manager.update_job(job_id, JobStatus.COMPLETED, "Knowledge base updated")
     except Exception as exc:
+        log.exception("[%s] Update failed: %s", job_id, exc)
         job_manager.update_job(job_id, JobStatus.FAILED, str(exc))
 
 
