@@ -181,20 +181,33 @@ const MarkdownContent = ({ text }) => {
   while (i < lines.length) {
     const line = lines[i];
 
-    const h1 = line.match(/^#\s+(.*)/);
-    const h2 = line.match(/^##\s+(.*)/);
-    const h3 = line.match(/^###\s+(.*)/);
+    // Triple-backtick code fence — consume until closing ```
+    if (line.trimStart().startsWith('```')) {
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) i++; // skip closing ```
+      elements.push(
+        <pre key={`pre${i}`} style={{ background: 'var(--surface-3)', borderRadius: 6, padding: '10px 14px', overflowX: 'auto', margin: '8px 0', border: '1px solid var(--line)' }}>
+          <code className="mono" style={{ fontSize: 12, color: 'var(--text-2)', whiteSpace: 'pre' }}>{codeLines.join('\n')}</code>
+        </pre>
+      );
+      continue;
+    }
 
-    if (h3) {
-      elements.push(<p key={i} style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', margin: '14px 0 4px' }}>{inlineFormat(h3[1], `h${i}-`)}</p>);
-      i++; continue;
-    }
-    if (h2) {
-      elements.push(<p key={i} style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '14px 0 4px' }}>{inlineFormat(h2[1], `h${i}-`)}</p>);
-      i++; continue;
-    }
-    if (h1) {
-      elements.push(<p key={i} style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: '16px 0 6px' }}>{inlineFormat(h1[1], `h${i}-`)}</p>);
+    // Headings — any depth (# through ######)
+    const hMatch = line.match(/^(#{1,6})\s+(.*)/);
+    if (hMatch) {
+      const level = hMatch[1].length;
+      const hStyle = level <= 2
+        ? { fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: '16px 0 6px' }
+        : level === 3
+          ? { fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '14px 0 4px' }
+          : { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', margin: '12px 0 4px' };
+      elements.push(<p key={i} style={hStyle}>{inlineFormat(hMatch[2], `h${i}-`)}</p>);
       i++; continue;
     }
 
