@@ -166,7 +166,13 @@ func (c *Config) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Onboard mode: grant IAM, health-check, set up BQ, create user.
+	// Onboard mode: if this Google account already has an org, reuse it so
+	// existing tasks remain visible after a re-onboard.
+	if existing, err := c.Store.GetUserByGoogleSub(r.Context(), info.Sub); err == nil {
+		payload.OrgID = existing.OrgID
+	}
+
+	// Grant IAM, health-check, set up BQ, create/update user.
 	if err := grantPermissions(r.Context(), accessToken, payload.ProjectID, payload.DLQSubscription, payload.MainTopic, c.RepairSA); err != nil {
 		log.Printf("IAM grant error: %v", err)
 		redirect("iam_grant_failed: " + err.Error())
@@ -195,6 +201,10 @@ func (c *Config) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	createdAt := time.Now()
+	if existing, err := c.Store.GetUserByOrgID(r.Context(), payload.OrgID); err == nil {
+		createdAt = existing.CreatedAt
+	}
 	user := models.User{
 		OrgID:             payload.OrgID,
 		GoogleSub:         info.Sub,
@@ -208,7 +218,7 @@ func (c *Config) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		NotificationEmail: payload.NotificationEmail,
 		GithubURL:         payload.GithubURL,
 		WebURL:            payload.WebURL,
-		CreatedAt:         time.Now(),
+		CreatedAt:         createdAt,
 	}
 
 	if err := c.Store.CreateUser(r.Context(), user); err != nil {

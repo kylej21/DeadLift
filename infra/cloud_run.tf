@@ -62,6 +62,11 @@ resource "google_cloud_run_v2_service" "proxy" {
       min_instance_count = 1
     }
 
+    vpc_access {
+      connector = google_vpc_access_connector.connector.id
+      egress    = "PRIVATE_RANGES_ONLY"
+    }
+
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
 
@@ -96,6 +101,18 @@ resource "google_cloud_run_v2_service" "proxy" {
       env {
         name  = "GRAPHRAG_SERVER_URL"
         value = var.graphrag_server_url
+      }
+      env {
+        name  = "VLLM_SERVER_URL"
+        value = var.vllm_server_url
+      }
+      env {
+        name  = "VLLM_API_KEY"
+        value = var.vllm_api_key
+      }
+      env {
+        name  = "VLLM_MODEL"
+        value = var.vllm_model
       }
     }
   }

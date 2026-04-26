@@ -10,7 +10,9 @@ import (
 
 	"cloud.google.com/go/firestore"
 
+	"proxy/internal/batches"
 	"proxy/internal/graphrag"
+	"proxy/internal/mcp"
 	"proxy/internal/onboard"
 	"proxy/internal/store"
 	"proxy/internal/tasks"
@@ -75,9 +77,21 @@ func main() {
 		Store:    st,
 	}
 
-	w := &worker.Worker{
+	bh := &batches.Handler{
 		RepairSA: repairSA,
 		Store:    st,
+	}
+
+	mcpClient := mcp.New(
+		os.Getenv("VLLM_SERVER_URL"),
+		os.Getenv("VLLM_API_KEY"),
+		os.Getenv("VLLM_MODEL"),
+	)
+
+	w := &worker.Worker{
+		RepairSA:  repairSA,
+		Store:     st,
+		MCPClient: mcpClient,
 	}
 
 	mux := http.NewServeMux()
@@ -92,6 +106,11 @@ func main() {
 	mux.HandleFunc("GET /api/tasks", th.HandleList)
 	mux.HandleFunc("POST /api/tasks/{task_id}/approve", th.HandleApprove)
 	mux.HandleFunc("POST /api/tasks/{task_id}/deny", th.HandleDeny)
+
+	// Batch management (derived from task grouping by error_class — no separate collection)
+	mux.HandleFunc("GET /api/batches", bh.HandleList)
+	mux.HandleFunc("POST /api/batches/{error_class}/approve", bh.HandleApprove)
+	mux.HandleFunc("POST /api/batches/{error_class}/deny", bh.HandleDeny)
 
 	// GraphRAG context ingestion
 	mux.HandleFunc("POST /api/graphrag/onboard", gr.HandleOnboard)

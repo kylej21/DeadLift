@@ -38,3 +38,36 @@ variable "graphrag_server_url" {
   type        = string
   default     = "http://10.30.112.192:2626"
 }
+
+variable "onprem_vpn_peer_ip" {
+  description = "Public IP of the on-prem VPN peer (your router/firewall external IP)"
+  type        = string
+}
+
+variable "onprem_vpn_shared_secret" {
+  description = "Pre-shared key for the IKEv1/IKEv2 VPN tunnel"
+  type        = string
+  sensitive   = true
+}
+
+variable "onprem_cidr" {
+  description = "On-prem network CIDR reachable through the VPN tunnel"
+  type        = string
+  default     = "10.30.112.0/24"
+}
+
+variable "vllm_server_url" {
+  description = "Base URL of the vLLM inference server"
+  type        = string
+}
+
+variable "vllm_api_key" {
+  description = "API key for the vLLM server"
+  type        = string
+  sensitive   = true
+}
+
+variable "vllm_model" {
+  description = "Model name to use for vLLM completions"
+  type        = string
+}

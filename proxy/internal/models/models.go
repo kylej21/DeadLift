@@ -25,6 +25,7 @@ type Task struct {
 	RawPayload   string            `firestore:"raw_payload"   json:"raw_payload"`
 	Attributes   map[string]string `firestore:"attributes"    json:"attributes"`
 	FixedPayload string            `firestore:"fixed_payload" json:"fixed_payload"`
+	ErrorClass   string            `firestore:"error_class"   json:"error_class"`
 	Status       string            `firestore:"status"        json:"status"` // pending_approval | approved | denied | failed
 	CreatedAt    time.Time         `firestore:"created_at"    json:"created_at"`
 	UpdatedAt    time.Time         `firestore:"updated_at"    json:"updated_at"`

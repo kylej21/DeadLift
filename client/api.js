@@ -23,8 +23,9 @@ window.api.signUp = async ({ email, password }) => {
 };
 
 window.api.signOut = async () => {
-  await __delay(150);
-  // TODO: POST /api/auth/signout
+  window.session.setOrgId(null);
+  window.session.setUser(null);
+  location.hash = '#/signin';
   return { ok: true };
 };
 
@@ -44,23 +45,56 @@ const __tryFormat = (str) => {
   try { return JSON.stringify(JSON.parse(str), null, 2); } catch { return str || ''; }
 };
 
+const __subscriptionLabel = (s) => {
+  if (!s) return '—';
+  const parts = s.split('/');
+  return parts[parts.length - 1] || s;
+};
+
+const __ERROR_CLASS_LABELS = {
+  schema_drift:   'Schema drift',
+  type_mismatch:  'Type mismatch',
+  malformed_json: 'Malformed JSON',
+  missing_field:  'Missing field',
+  encoding:       'Encoding error',
+  unknown:        'Unknown',
+};
+const __errorClassLabel = (c) => __ERROR_CLASS_LABELS[c] || (c || 'Unknown').replace(/_/g, ' ');
+
 const __taskToFix = (task) => ({
   id: task.task_id,
   status: task.status === 'pending_approval' ? 'pending'
         : task.status === 'approved' ? 'fixed'
         : task.status === 'failed' ? 'denied'
         : task.status,
-  category: 'AI Repair',
+  category: __errorClassLabel(task.error_class),
+  errorClass: task.error_class || '',
   confidence: 0.85,
   subscription: task.attributes?.dlq_subscription || task.org_id,
   topic: task.attributes?.main_topic || '—',
   receivedAt: __timeAgo(task.created_at),
+  createdAtRaw: task.created_at || null,
   fixedAt: task.status === 'approved' ? __timeAgo(task.updated_at) : null,
   error: `Pub/Sub message ${task.message_id}`,
   batch: null,
   before: __tryFormat(task.raw_payload),
   after: __tryFormat(task.fixed_payload),
   sources: [],
+});
+
+// Batches are derived server-side by grouping tasks on error_class — no separate collection.
+const __batchToCard = (batch) => ({
+  id: batch.error_class,
+  title: __errorClassLabel(batch.error_class),
+  rootCause: `${batch.pending_count} message${batch.pending_count === 1 ? '' : 's'} classified as "${__errorClassLabel(batch.error_class)}" are pending repair.`,
+  affectedCount: batch.pending_count,
+  totalCount: batch.total_count,
+  affectedTopics: [],
+  category: __errorClassLabel(batch.error_class),
+  confidence: 0.85,
+  status: batch.status === 'pending' ? 'pending' : 'fixed',
+  firstSeen: __timeAgo(batch.first_seen),
+  fixSummary: `Apply AI-proposed fixes to all ${batch.pending_count} pending messages and republish to main topic.`,
 });
 
 // ---------- ONBOARDING ----------
@@ -152,9 +186,34 @@ window.api.denyFix = async (id) => {
   return { ok: true, id, status: 'denied' };
 };
 
-window.api.getBatches = async () => [];
+window.api.getBatches = async () => {
+  const orgId = window.session.orgId;
+  if (!orgId) return [];
+  const res = await fetch(`${PROXY_URL}/api/batches?org_id=${orgId}`);
+  if (!res.ok) return [];
+  const batches = await res.json();
+  return (batches || []).map(__batchToCard);
+};
 
-window.api.approveBatch = async (id) => ({ ok: true, id, status: 'fixed' });
+window.api.approveBatch = async (errorClass) => {
+  const orgId = window.session.orgId;
+  const res = await fetch(
+    `${PROXY_URL}/api/batches/${encodeURIComponent(errorClass)}/approve?org_id=${orgId}`,
+    { method: 'POST' }
+  );
+  if (!res.ok) throw new Error(await res.text());
+  return { ok: true, id: errorClass, status: 'fixed' };
+};
+
+window.api.denyBatch = async (errorClass) => {
+  const orgId = window.session.orgId;
+  const res = await fetch(
+    `${PROXY_URL}/api/batches/${encodeURIComponent(errorClass)}/deny?org_id=${orgId}`,
+    { method: 'POST' }
+  );
+  if (!res.ok) throw new Error(await res.text());
+  return { ok: true, id: errorClass, status: 'denied' };
+};
 
 window.api.getAnalytics = async () => null; // analytics derived from fixes in Dashboard
 

@@ -6,17 +6,19 @@ import (
 	"log"
 	"time"
 
-	"github.com/google/uuid"
 	"proxy/internal/mcp"
 	"proxy/internal/models"
 	"proxy/internal/pubsub"
 	"proxy/internal/store"
+
+	"github.com/google/uuid"
 )
 
 // Worker polls each org's DLQ subscription and creates repair tasks.
 type Worker struct {
-	RepairSA string
-	Store    *store.Store
+	RepairSA  string
+	Store     *store.Store
+	MCPClient *mcp.Client
 }
 
 func (w *Worker) Start(ctx context.Context) {
@@ -31,6 +33,18 @@ func (w *Worker) Start(ctx context.Context) {
 		if err != nil {
 			log.Printf("worker: failed to load orgs: %v", err)
 			return
+		}
+		current := map[string]bool{}
+		for _, u := range users {
+			current[u.OrgID] = true
+		}
+		// Cancel goroutines for orgs no longer in Firestore.
+		for orgID, cancel := range active {
+			if !current[orgID] {
+				log.Printf("worker: org %s removed from Firestore, stopping goroutine", orgID)
+				cancel()
+				delete(active, orgID)
+			}
 		}
 		for _, u := range users {
 			if _, running := active[u.OrgID]; !running {
@@ -100,7 +114,7 @@ func allAutoRepublish(m map[string]bool) bool {
 }
 
 func (w *Worker) processMessage(ctx context.Context, user models.User, token string, msg models.PubSubMessage) error {
-	// Skip messages already repaired by us to prevent feedback loops.
+	// Skip messages already repaired by us to prevent feedback loops. redeploy trigger
 	if msg.Message.Attributes["_deadlift_repaired"] == "true" {
 		log.Printf("worker[%s]: skipping already-repaired message %s", user.OrgID, msg.Message.MessageID)
 		_ = pubsub.AckMessages(ctx, token, user.DLQSubscription, []string{msg.AckID})
@@ -113,7 +127,7 @@ func (w *Worker) processMessage(ctx context.Context, user models.User, token str
 	}
 	rawPayload := string(rawBytes)
 
-	fixedPayload, err := mcp.CallMCP(ctx, rawPayload)
+	result, err := w.MCPClient.Call(ctx, user.OrgID, msg.Message.MessageID, rawPayload)
 	if err != nil {
 		return err
 	}
@@ -125,7 +139,8 @@ func (w *Worker) processMessage(ctx context.Context, user models.User, token str
 		MessageID:    msg.Message.MessageID,
 		RawPayload:   rawPayload,
 		Attributes:   msg.Message.Attributes,
-		FixedPayload: fixedPayload,
+		FixedPayload: result.FixedPayload,
+		ErrorClass:   result.ErrorClass,
 		Status:       "pending_approval",
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
@@ -146,15 +161,15 @@ func (w *Worker) processMessage(ctx context.Context, user models.User, token str
 			outAttrs[k] = v
 		}
 		outAttrs["_deadlift_repaired"] = "true"
-		if err := pubsub.PublishMessage(ctx, token, user.MainTopic, fixedPayload, outAttrs); err != nil {
+		if err := pubsub.PublishMessage(ctx, token, user.MainTopic, result.FixedPayload, outAttrs); err != nil {
 			log.Printf("worker[%s]: auto-publish error: %v", user.OrgID, err)
 			_ = w.Store.UpdateTaskStatus(ctx, taskID, "failed")
 			return nil
 		}
 		_ = w.Store.UpdateTaskStatus(ctx, taskID, "approved")
-		log.Printf("worker[%s]: auto-approved task %s", user.OrgID, taskID)
+		log.Printf("worker[%s]: auto-approved task %s (class: %s)", user.OrgID, taskID, result.ErrorClass)
 	} else {
-		log.Printf("worker[%s]: task %s pending human approval", user.OrgID, taskID)
+		log.Printf("worker[%s]: task %s pending approval (class: %s)", user.OrgID, taskID, result.ErrorClass)
 	}
 
 	return nil

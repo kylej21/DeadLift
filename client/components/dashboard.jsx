@@ -14,15 +14,59 @@ const TABS = [
 
 const __fixesToAnalytics = (fixes) => {
   const list = Array.isArray(fixes) ? fixes : [];
-  const total = list.length;
   const approved = list.filter(f => f.status === 'fixed').length;
   const pending = list.filter(f => f.status === 'pending').length;
   const denied = list.filter(f => f.status === 'denied').length;
+  const total = list.length;
+
+  // Time series: bucket by hour of day using createdAtRaw.
+  const buckets = Array.from({ length: 24 }, (_, i) => ({ hour: i, dlq: 0, fixed: 0, awaiting: 0, unfixable: 0 }));
+  list.forEach(f => {
+    const ts = f.createdAtRaw ? new Date(f.createdAtRaw) : null;
+    const h = ts && !isNaN(ts) ? ts.getHours() : null;
+    if (h === null) return;
+    buckets[h].dlq++;
+    if (f.status === 'fixed') buckets[h].fixed++;
+    else if (f.status === 'pending') buckets[h].awaiting++;
+    else buckets[h].unfixable++;
+  });
+
+  // Per-topic breakdown.
+  const topicMap = {};
+  list.forEach(f => {
+    const t = f.topic || '—';
+    if (!topicMap[t]) topicMap[t] = { name: t, dlq: 0, fixed: 0 };
+    topicMap[t].dlq++;
+    if (f.status === 'fixed') topicMap[t].fixed++;
+  });
+  const topics = Object.values(topicMap).sort((a, b) => b.dlq - a.dlq).map(t => ({
+    ...t,
+    mttr: '—',
+  }));
+
+  // Subscription breakdown as "categories".
+  const subMap = {};
+  const PALETTE = [
+    'oklch(0.78 0.17 145)', 'oklch(0.72 0.14 240)', 'oklch(0.82 0.16 78)',
+    'oklch(0.72 0.16 290)', 'oklch(0.68 0.18 25)', 'oklch(0.62 0.04 240)',
+  ];
+  list.forEach(f => {
+    const s = f.subscription || '—';
+    if (!subMap[s]) subMap[s] = { name: s, count: 0 };
+    subMap[s].count++;
+  });
+  const categories = Object.values(subMap).sort((a, b) => b.count - a.count).map((c, i) => ({
+    name: c.name,
+    count: c.count,
+    pct: total > 0 ? Math.round((c.count / total) * 100) : 0,
+    color: PALETTE[i % PALETTE.length],
+  }));
+
   return {
     kpis: { dlqVolume24h: total, autoFixed: approved, awaitingApproval: pending, unfixable: denied, mttrBefore: '—', mttrAfter: '—', mttrDelta: 0, estSavings30d: 0 },
-    series: Array.from({ length: 24 }, (_, i) => ({ hour: i, dlq: 0, fixed: 0, awaiting: 0, unfixable: 0 })),
-    categories: [],
-    topics: [],
+    series: buckets,
+    categories,
+    topics,
   };
 };
 
@@ -241,22 +285,31 @@ const BatchesTab = ({ batches, setBatches }) => {
     setBatches(prev => prev.map(b => b.id === id ? { ...b, status: 'fixed' } : b));
   };
 
+  const handleDeny = async (id) => {
+    await window.api.denyBatch(id);
+    setBatches(prev => prev.map(b => b.id === id ? { ...b, status: 'denied' } : b));
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {batches.map(b => <BatchCard key={b.id} batch={b} onApprove={handleApprove} />)}
+      {batches.map(b => <BatchCard key={b.id} batch={b} onApprove={handleApprove} onDeny={handleDeny} />)}
     </div>
   );
 };
 
-const BatchCard = ({ batch, onApprove }) => {
+const BatchCard = ({ batch, onApprove, onDeny }) => {
   const [expanded, setExpanded] = React.useState(batch.status === 'pending');
+  const statusPill = batch.status === 'fixed'
+    ? <span className="pill pill-green"><span className="dot" style={{ background: 'var(--green)' }} />Approved</span>
+    : batch.status === 'denied'
+    ? <span className="pill pill-red"><span className="dot" style={{ background: 'var(--red)' }} />Denied</span>
+    : <span className="pill pill-amber"><span className="dot pulse" style={{ background: 'var(--amber)' }} />Pending</span>;
+
   return (
     <div className="surface" style={{ overflow: 'hidden' }}>
       <div onClick={() => setExpanded(!expanded)} style={{ padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {batch.status === 'fixed'
-            ? <span className="pill pill-green"><span className="dot" style={{ background: 'var(--green)' }} />Fixed</span>
-            : <span className="pill pill-amber"><span className="dot pulse" style={{ background: 'var(--amber)' }} />Pending</span>}
+          {statusPill}
           <span className="pill">{batch.category}</span>
           <span style={{ fontSize: 14, fontWeight: 500 }}>{batch.title}</span>
         </div>
@@ -274,7 +327,7 @@ const BatchCard = ({ batch, onApprove }) => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <MiniStat label="Affected messages" value={batch.affectedCount} />
             <MiniStat label="First seen" value={batch.firstSeen} />
-            <MiniStat label="Topics" value={batch.affectedTopics.join(', ')} />
+            <MiniStat label="Topics" value={(batch.affectedTopics || []).join(', ') || '—'} />
           </div>
           <div style={{ background: 'var(--green-bg)', border: '1px solid var(--green-line)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
             <div className="eyebrow" style={{ fontSize: 10, color: 'var(--green)', marginBottom: 4 }}>Proposed fix</div>
@@ -282,7 +335,7 @@ const BatchCard = ({ batch, onApprove }) => {
           </div>
           {batch.status === 'pending' && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button className="btn btn-sm">Deny batch</button>
+              <button className="btn btn-sm" onClick={() => onDeny(batch.id)}>Deny batch</button>
               <button className="btn btn-sm btn-green" onClick={() => onApprove(batch.id)}>Approve all {batch.affectedCount}</button>
             </div>
           )}

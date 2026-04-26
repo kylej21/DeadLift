@@ -32,3 +32,8 @@ output "repair_sa_email" {
   description = "Grant this SA access to customer Pub/Sub resources during onboarding"
   value       = google_service_account.repair.email
 }
+
+output "vpn_gateway_ip" {
+  description = "GCP VPN gateway public IP — configure this as the peer IP on your on-prem VPN device"
+  value       = google_compute_address.vpn_ip.address
+}
