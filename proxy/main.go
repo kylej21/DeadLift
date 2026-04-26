@@ -64,7 +64,6 @@ func main() {
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
 		RedirectURI:  os.Getenv("GITHUB_REDIRECT_URI"),
-		ClientURL:    clientURL,
 	}
 
 	gr := graphrag.New(os.Getenv("GRAPHRAG_SERVER_URL"), st)

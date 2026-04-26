@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,7 +17,6 @@ type Handler struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURI  string
-	ClientURL    string
 	tokens       sync.Map // state → access_token string
 }
 
@@ -38,6 +39,7 @@ func (h *Handler) HandleAuthURL(w http.ResponseWriter, r *http.Request) {
 
 	// Store state → "" placeholder (token not yet obtained)
 	h.tokens.Store(state, "")
+	log.Printf("github: generated auth URL for state %s", state)
 
 	params := url.Values{
 		"client_id":    {h.ClientID},
@@ -64,6 +66,7 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Validate that the state exists (use Load, not LoadAndDelete — GetToken handles deletion)
 	if _, ok := h.tokens.Load(state); !ok {
+		log.Printf("github: callback error — invalid or expired state %s", state)
 		http.Error(w, `{"error":"invalid or expired state"}`, http.StatusBadRequest)
 		return
 	}
@@ -77,8 +80,20 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Store the real token
 	h.tokens.Store(state, accessToken)
+	log.Printf("github: token exchange successful for state %s", state)
 
-	http.Redirect(w, r, h.ClientURL+"/github_connected.html?state_id="+url.QueryEscape(state), http.StatusTemporaryRedirect)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html>
+<head><title>GitHub Connected</title></head>
+<body>
+<script>
+if (window.opener) { window.opener.postMessage({ stateId: %q }, '*'); }
+window.close();
+</script>
+<p>Connected. You can close this tab.</p>
+</body>
+</html>`, state)
 }
 
 // GetToken retrieves and consumes the access token associated with stateID.

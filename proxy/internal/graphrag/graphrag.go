@@ -90,6 +90,12 @@ func (p *Proxy) HandleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if _, hasToken := req["github_token"]; hasToken {
+		log.Printf("graphrag: injected github token for update client_id=%s", req["client_id"])
+	} else {
+		log.Printf("graphrag: no github token for update client_id=%s (public repo)", req["client_id"])
+	}
+
 	newBody, _ := json.Marshal(req)
 	r.Body = io.NopCloser(bytes.NewReader(newBody))
 	r.ContentLength = int64(len(newBody))

@@ -16,25 +16,16 @@ const Onboarding = ({ error: initError }) => {
   const [step, setStep] = React.useState(0);
   const [cfg, setCfg] = React.useState({
     projectId: '', dlqSub: '', mainTopic: '',
-    files: [], githubUrl: '', webUrl: '',
+    files: [], githubUrl: '',
     approvalMode: 'human', categoryOverrides: {},
     batchThreshold: 5,
     notifications: { slack: '', email: window.session.user?.email || '', pagerduty: '' },
   });
   const [submitError, setSubmitError] = React.useState(initError || null);
-  const [repoPrivate, setRepoPrivate] = React.useState(null);
   const [githubStateId, setGithubStateId] = React.useState(null);
   const upd = (patch) => setCfg(c => ({ ...c, ...patch }));
   const next = () => setStep(s => Math.min(s + 1, ONBOARD_STEPS.length - 1));
   const prev = () => setStep(s => Math.max(s - 1, 0));
-
-  React.useEffect(() => {
-    if (!cfg.githubUrl) { setRepoPrivate(null); return; }
-    const timer = setTimeout(() => {
-      window.api.checkRepoVisibility(cfg.githubUrl).then(setRepoPrivate);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [cfg.githubUrl]);
 
   const finish = async () => {
     setSubmitError(null);
@@ -49,7 +40,7 @@ const Onboarding = ({ error: initError }) => {
   const panels = [
     <StepGCP cfg={cfg} upd={upd} />,
     <StepPubSub cfg={cfg} upd={upd} />,
-    <StepContext cfg={cfg} upd={upd} repoPrivate={repoPrivate} githubStateId={githubStateId} setGithubStateId={setGithubStateId} />,
+    <StepContext cfg={cfg} upd={upd} githubStateId={githubStateId} setGithubStateId={setGithubStateId} />,
     <StepApproval cfg={cfg} upd={upd} />,
     <StepBatching cfg={cfg} upd={upd} />,
     <StepNotify cfg={cfg} upd={upd} />,
@@ -133,7 +124,7 @@ const StepPubSub = ({ cfg, upd }) => (
   </div>
 );
 
-const StepContext = ({ cfg, upd, repoPrivate, githubStateId, setGithubStateId }) => {
+const StepContext = ({ cfg, upd, githubStateId, setGithubStateId }) => {
   const [uploading, setUploading] = React.useState(false);
   const addFile = async (e) => {
     const file = e.target.files[0];
@@ -143,46 +134,39 @@ const StepContext = ({ cfg, upd, repoPrivate, githubStateId, setGithubStateId })
     setUploading(false);
     upd({ files: [...cfg.files, { id: res.id, name: res.name, size: res.size }] });
   };
+  const connectGithub = async () => {
+    console.log('[github-oauth] connect button clicked');
+    try {
+      const { oauth_url, state_id } = await window.api.getGithubAuthUrl();
+      const popup = window.open(oauth_url, 'github-oauth', 'width=600,height=700,noopener=0');
+      window.addEventListener('message', (e) => {
+        if (e.data && e.data.stateId === state_id) {
+          console.log('[github-oauth] postMessage received, state_id:', state_id);
+          setGithubStateId(state_id);
+          if (popup && !popup.closed) popup.close();
+        }
+      }, { once: true });
+    } catch (err) {
+      alert('Failed to start GitHub auth: ' + err.message);
+    }
+  };
   return (
     <div>
       <h2 className="h3" style={{ marginBottom: 6 }}>Upload context for smarter repairs</h2>
-      <p className="muted-2" style={{ fontSize: 14, marginBottom: 24 }}>Drop runbooks, post-mortems, source code, or paste a GitHub / web URL. We build a per-tenant GraphRAG index so the agent can cite real context.</p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-        <div>
-          <label className="lbl">GitHub repository URL</label>
-          <input className="field" value={cfg.githubUrl} onChange={e => upd({ githubUrl: e.target.value })} placeholder="https://github.com/acme/payments-api" />
-          {repoPrivate === true && (
-            githubStateId
-              ? <div style={{marginTop: 6, color: '#16a34a', fontSize: 13}}>&#10003; GitHub connected</div>
-              : <div style={{marginTop: 6, padding: '8px 12px', background: '#fef3c7', border: '1px solid #d97706', borderRadius: 6, fontSize: 13, display: 'flex', alignItems: 'center', gap: 10}}>
-                  <span>This repo appears private.</span>
-                  <button
-                    onClick={async () => {
-                      try {
-                        const { oauth_url, state_id } = await window.api.getGithubAuthUrl();
-                        const popup = window.open(oauth_url, 'github-oauth', 'width=600,height=700,noopener=0');
-                        window.addEventListener('message', (e) => {
-                          if (e.data && e.data.stateId === state_id) {
-                            setGithubStateId(state_id);
-                            if (popup && !popup.closed) popup.close();
-                          }
-                        }, { once: true });
-                      } catch (err) {
-                        alert('Failed to start GitHub auth: ' + err.message);
-                      }
-                    }}
-                    style={{padding: '4px 10px', background: '#1f2937', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13}}
-                  >
-                    Connect GitHub
-                  </button>
-                </div>
-          )}
-        </div>
-        <div>
-          <label className="lbl">Web scrape URL</label>
-          <input className="field" value={cfg.webUrl} onChange={e => upd({ webUrl: e.target.value })} placeholder="https://docs.acme.com/runbook" />
-        </div>
+      <p className="muted-2" style={{ fontSize: 14, marginBottom: 24 }}>Drop runbooks, post-mortems, source code, or connect a GitHub repository. We build a per-tenant GraphRAG index so the agent can cite real context.</p>
+      <label className="lbl">GitHub repository URL</label>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'flex-start' }}>
+        <input className="field" style={{ flex: 1 }} value={cfg.githubUrl} onChange={e => upd({ githubUrl: e.target.value })} placeholder="https://github.com/acme/payments-api" />
+        {githubStateId
+          ? <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', height: 38, background: 'var(--green-bg)', border: '1px solid var(--green-line)', borderRadius: 6, fontSize: 13, color: 'var(--green)', whiteSpace: 'nowrap' }}>
+              <CheckIcon size={12} color="var(--green)" /> Connected
+            </div>
+          : <button onClick={connectGithub} style={{ padding: '0 14px', height: 38, background: '#1f2937', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
+              Connect GitHub
+            </button>
+        }
       </div>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 20 }}>Connect GitHub to index private repos. Public repos work without connecting.</p>
       <label className="lbl">Upload files</label>
       <div style={{ border: '1px dashed var(--line-strong)', borderRadius: 10, padding: 28, textAlign: 'center', background: 'var(--surface-1)', cursor: 'pointer', position: 'relative' }}>
         <input type="file" multiple onChange={addFile} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
