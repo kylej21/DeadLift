@@ -131,64 +131,34 @@ const MiniBarChart = ({ series }) => {
 
 const RCATab = ({ reports }) => {
   if (!reports) return <LoadingState />;
-  if (reports.length === 0) return <EmptyState title="No root cause reports" desc="Reports are generated when the agent completes an investigation." />;
+  if (reports.length === 0) return <EmptyState title="No root cause reports" desc='Click "Generate root cause" on any fix card to create a report.' />;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {reports.map(r => <RCACard key={r.id} report={r} />)}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {reports.map(r => <RCACard key={`${r.org_id}_${r.message_id}`} report={r} />)}
     </div>
   );
 };
 
 const RCACard = ({ report }) => {
   const [expanded, setExpanded] = React.useState(true);
+  const date = report.created_at ? new Date(report.created_at).toLocaleString() : '—';
   return (
     <div className="surface" style={{ overflow: 'hidden' }}>
-      <div onClick={() => setExpanded(!expanded)} style={{ padding: '16px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: 12, flexWrap: 'wrap' }}>
+      <div onClick={() => setExpanded(!expanded)} style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 2 }}>{report.title}</div>
-          <div className="muted" style={{ fontSize: 12.5 }}>Run at {report.runAt} · {report.affected} messages affected</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <span className="pill">{report.error_class || 'unknown'}</span>
+            <span className="mono muted" style={{ fontSize: 11 }}>{report.message_id}</span>
+          </div>
+          <div className="muted" style={{ fontSize: 12 }}>{date}</div>
         </div>
-        <ConfidenceRing value={report.confidence} size={36} />
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transition: 'transform 150ms', transform: expanded ? 'rotate(180deg)' : 'none' }}>
+          <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
       </div>
       {expanded && (
-        <div style={{ padding: '0 18px 18px' }}>
-          {/* Summary */}
-          <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 16, marginBottom: 16, border: '1px solid var(--line)' }}>
-            <div className="eyebrow" style={{ marginBottom: 6, fontSize: 10 }}>Summary</div>
-            <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: 0, lineHeight: 1.55 }}>{report.summary}</p>
-          </div>
-
-          {/* Hypothesis tree */}
-          <div className="eyebrow" style={{ marginBottom: 10 }}>Hypotheses</div>
-          {report.hypotheses.map(h => (
-            <div key={h.id} style={{ marginBottom: 12, padding: 14, borderRadius: 10, border: h.winner ? '1px solid var(--green-line)' : '1px solid var(--line)', background: h.winner ? 'var(--green-bg)' : 'var(--surface-1)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {h.winner && <span className="pill pill-green" style={{ fontSize: 10, padding: '2px 8px' }}>Most likely</span>}
-                  <span style={{ fontSize: 13.5, fontWeight: 500 }}>{h.text}</span>
-                </div>
-                <span className="mono" style={{ fontSize: 12, color: h.confidence > 0.7 ? 'var(--green)' : 'var(--text-3)' }}>{Math.round(h.confidence * 100)}%</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {h.evidence.map((ev, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: 'var(--text-2)' }}>
-                    <SourceIcon kind={ev.kind} />
-                    <div>
-                      <span style={{ fontWeight: 500, color: 'var(--text)' }}>{ev.label}</span>
-                      {ev.t && <span className="muted mono" style={{ marginLeft: 6, fontSize: 11 }}>{ev.t}</span>}
-                      <div className="muted" style={{ marginTop: 1 }}>{ev.detail}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {/* Recommendation */}
-          <div style={{ background: 'var(--blue-bg)', border: '1px solid oklch(0.72 0.14 240 / 0.3)', borderRadius: 10, padding: 14, marginTop: 8 }}>
-            <div className="eyebrow" style={{ fontSize: 10, color: 'var(--blue)', marginBottom: 4 }}>Recommendation</div>
-            <div style={{ fontSize: 13.5, color: 'var(--text)' }}>{report.recommendation}</div>
-          </div>
+        <div style={{ borderTop: '1px solid var(--line)', padding: '14px 18px' }}>
+          <pre style={{ fontSize: 12.5, lineHeight: 1.65, whiteSpace: 'pre-wrap', color: 'var(--text-2)', margin: 0 }}>{report.analysis}</pre>
         </div>
       )}
     </div>
