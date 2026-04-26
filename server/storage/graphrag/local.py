@@ -9,8 +9,8 @@ from storage.graphrag.models import ClientState
 class LocalGraphRAGStorage(GraphRAGStorage):
     def __init__(
         self,
-        base_dir: Path = Path("data/graphrag"),
-        state_file: Path = Path("data/clients.json"),
+        base_dir: Path = Path("kb"),
+        state_file: Path = Path("kb/clients.json"),
     ):
         self._base_dir = base_dir
         self._path = state_file
@@ -23,6 +23,9 @@ class LocalGraphRAGStorage(GraphRAGStorage):
 
     def _write(self, data: dict):
         self._path.write_text(json.dumps(data, indent=2))
+
+    def client_exists(self, client_id: str) -> bool:
+        return (self._base_dir / client_id).exists()
 
     def get_root(self, client_id: str) -> Path:
         """Returns the local path graphrag should use as its working directory for this client."""

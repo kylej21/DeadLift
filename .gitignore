@@ -231,3 +231,5 @@ CLAUDE.md
 
 # GraphRAG e2e test output
 server/graphrag/onboarding/tests/e2e_output/
+
+server/kb

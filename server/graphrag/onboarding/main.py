@@ -1,7 +1,13 @@
 import subprocess
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+
+import os
+load_dotenv(Path(__file__).parent / ".env")
+_env_mode = os.environ.get("ENV_MODE", "openai")
+load_dotenv(Path(__file__).parent / f".env.{_env_mode}")
 from pydantic import BaseModel
 
 from .jobs.manager import JobStatus, job_manager
@@ -29,7 +35,7 @@ class UpdateRequest(BaseModel):
 def _run_onboard(job_id: str, repo_url: str, client_id: str):
     try:
         job_manager.update_job(job_id, JobStatus.RUNNING, "Cloning repository")
-        repo_path = clone_repo(repo_url, str(Path("data/repos") / client_id))
+        repo_path = clone_repo(repo_url, str(Path("kb/repos") / client_id))
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Preprocessing files")
         graphrag_root = str(storage.get_root(client_id))
@@ -61,7 +67,7 @@ def _run_update(job_id: str, client_id: str):
             job_manager.update_job(job_id, JobStatus.FAILED, f"Client {client_id} not found")
             return
 
-        repo_path = str(Path("data/repos") / client_id)
+        repo_path = str(Path("kb/repos") / client_id)
         graphrag_root = str(storage.get_root(client_id))
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Fetching latest changes")
@@ -91,6 +97,8 @@ def _run_update(job_id: str, client_id: str):
 
 @app.post("/onboard")
 def onboard(req: OnboardRequest, background_tasks: BackgroundTasks):
+    if storage.client_exists(req.client_id):
+        raise HTTPException(status_code=409, detail=f"Client {req.client_id} already exists. Use /update to add new changes.")
     job = job_manager.create_job(req.client_id)
     background_tasks.add_task(_run_onboard, job.job_id, req.repo_url, req.client_id)
     return {"job_id": job.job_id}

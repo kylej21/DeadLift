@@ -17,6 +17,11 @@ class GraphRAGStorage(ABC):
         ...
 
     @abstractmethod
+    def client_exists(self, client_id: str) -> bool:
+        """Returns True if a knowledge base directory already exists for this client."""
+        ...
+
+    @abstractmethod
     def save_artifacts(self, client_id: str, root: Path) -> None:
         """Persist all artifacts (output/, prompts/, settings.yaml, input/, cache/) after indexing completes."""
         ...
