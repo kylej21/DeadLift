@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/firestore"
 
 	"proxy/internal/batches"
+	gh "proxy/internal/github"
 	"proxy/internal/graphrag"
 	"proxy/internal/mcp"
 	"proxy/internal/onboard"
@@ -58,7 +59,14 @@ func main() {
 	var stateStore sync.Map
 	st := store.New(fs, gcpProject)
 
-	gr := graphrag.New(os.Getenv("GRAPHRAG_SERVER_URL"))
+	ghHandler := &gh.Handler{
+		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
+		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+		RedirectURI:  os.Getenv("GITHUB_REDIRECT_URI"),
+		ClientURL:    clientURL,
+	}
+
+	gr := graphrag.New(os.Getenv("GRAPHRAG_SERVER_URL"), st)
 
 	ob := &onboard.Config{
 		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
@@ -70,6 +78,7 @@ func main() {
 		Store:        st,
 		StateStore:   &stateStore,
 		Graphrag:     gr,
+		Github:       ghHandler,
 	}
 
 	th := &tasks.Handler{
@@ -95,6 +104,10 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+
+	// GitHub OAuth
+	mux.HandleFunc("GET /api/github/auth-url", ghHandler.HandleAuthURL)
+	mux.HandleFunc("GET /api/github/callback", ghHandler.HandleCallback)
 
 	// Onboarding & auth
 	mux.HandleFunc("POST /api/onboard/connect", ob.HandleConnect)

@@ -15,6 +15,7 @@ type User struct {
 	NotificationEmail string          `firestore:"notification_email" json:"notification_email"`
 	GithubURL         string          `firestore:"github_url"         json:"github_url"`
 	WebURL            string          `firestore:"web_url"            json:"web_url"`
+	GithubToken       string          `firestore:"github_token"       json:"github_token"`
 	CreatedAt         time.Time       `firestore:"created_at"         json:"created_at"`
 }
 
@@ -42,6 +43,7 @@ type StatePayload struct {
 	NotificationEmail string
 	GithubURL         string
 	WebURL            string
+	GithubToken       string
 }
 
 type UserInfo struct {
