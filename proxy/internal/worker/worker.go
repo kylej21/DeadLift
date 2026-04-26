@@ -34,6 +34,18 @@ func (w *Worker) Start(ctx context.Context) {
 			log.Printf("worker: failed to load orgs: %v", err)
 			return
 		}
+		current := map[string]bool{}
+		for _, u := range users {
+			current[u.OrgID] = true
+		}
+		// Cancel goroutines for orgs no longer in Firestore.
+		for orgID, cancel := range active {
+			if !current[orgID] {
+				log.Printf("worker: org %s removed from Firestore, stopping goroutine", orgID)
+				cancel()
+				delete(active, orgID)
+			}
+		}
 		for _, u := range users {
 			if _, running := active[u.OrgID]; !running {
 				orgCtx, cancel := context.WithCancel(ctx)
