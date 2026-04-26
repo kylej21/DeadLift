@@ -139,31 +139,96 @@ const __RCA_CLASS_THEME = {
 };
 const __rcaTheme = (cls) => __RCA_CLASS_THEME[cls] || __RCA_CLASS_THEME.unknown;
 
-const __RCA_SECTION_META = [
-  { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>, color: 'var(--red)' },
-  { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>, color: 'var(--amber)' },
-  { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>, color: 'var(--blue)' },
-  { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, color: 'var(--green)' },
-];
+const MarkdownContent = ({ text }) => {
+  if (!text) return null;
 
-const __parseRCASections = (text) => {
-  if (!text) return [];
-  const sections = [];
-  const lines = text.split('\n');
-  let current = null;
-  for (const line of lines) {
-    const match = line.match(/^(\d+)\.\s+(.+)/);
-    if (match) {
-      if (current) sections.push(current);
-      current = { num: parseInt(match[1], 10), heading: match[2], body: [] };
-    } else if (current) {
-      current.body.push(line);
-    } else if (line.trim()) {
-      sections.push({ num: 0, heading: null, body: [line] });
+  const inlineFormat = (str, keyPrefix) => {
+    const parts = [];
+    let remaining = str;
+    let k = 0;
+    while (remaining.length > 0) {
+      const bold = remaining.match(/^([\s\S]*?)\*\*(.+?)\*\*/);
+      if (bold) {
+        if (bold[1]) parts.push(<span key={keyPrefix + k++}>{bold[1]}</span>);
+        parts.push(<strong key={keyPrefix + k++}>{bold[2]}</strong>);
+        remaining = remaining.slice(bold[0].length);
+        continue;
+      }
+      const italic = remaining.match(/^([\s\S]*?)\*(.+?)\*/);
+      if (italic) {
+        if (italic[1]) parts.push(<span key={keyPrefix + k++}>{italic[1]}</span>);
+        parts.push(<em key={keyPrefix + k++}>{italic[2]}</em>);
+        remaining = remaining.slice(italic[0].length);
+        continue;
+      }
+      const code = remaining.match(/^([\s\S]*?)`(.+?)`/);
+      if (code) {
+        if (code[1]) parts.push(<span key={keyPrefix + k++}>{code[1]}</span>);
+        parts.push(<code key={keyPrefix + k++} className="mono" style={{ fontSize: 12, background: 'var(--surface-3)', padding: '1px 5px', borderRadius: 3 }}>{code[2]}</code>);
+        remaining = remaining.slice(code[0].length);
+        continue;
+      }
+      parts.push(<span key={keyPrefix + k++}>{remaining}</span>);
+      break;
     }
+    return parts;
+  };
+
+  const lines = text.split('\n');
+  const elements = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    const h1 = line.match(/^#\s+(.*)/);
+    const h2 = line.match(/^##\s+(.*)/);
+    const h3 = line.match(/^###\s+(.*)/);
+
+    if (h3) {
+      elements.push(<p key={i} style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-3)', margin: '14px 0 4px' }}>{inlineFormat(h3[1], `h${i}-`)}</p>);
+      i++; continue;
+    }
+    if (h2) {
+      elements.push(<p key={i} style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '14px 0 4px' }}>{inlineFormat(h2[1], `h${i}-`)}</p>);
+      i++; continue;
+    }
+    if (h1) {
+      elements.push(<p key={i} style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: '16px 0 6px' }}>{inlineFormat(h1[1], `h${i}-`)}</p>);
+      i++; continue;
+    }
+
+    // Bullet list — collect consecutive items
+    if (line.match(/^[-*]\s+/)) {
+      const items = [];
+      while (i < lines.length && lines[i].match(/^[-*]\s+/)) {
+        items.push(<li key={i} style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--text-2)', marginBottom: 2 }}>{inlineFormat(lines[i].replace(/^[-*]\s+/, ''), `li${i}-`)}</li>);
+        i++;
+      }
+      elements.push(<ul key={`ul${i}`} style={{ margin: '4px 0 8px', paddingLeft: 20 }}>{items}</ul>);
+      continue;
+    }
+
+    // Numbered list — collect consecutive items
+    if (line.match(/^\d+\.\s+/)) {
+      const items = [];
+      while (i < lines.length && lines[i].match(/^\d+\.\s+/)) {
+        items.push(<li key={i} style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--text-2)', marginBottom: 2 }}>{inlineFormat(lines[i].replace(/^\d+\.\s+/, ''), `oli${i}-`)}</li>);
+        i++;
+      }
+      elements.push(<ol key={`ol${i}`} style={{ margin: '4px 0 8px', paddingLeft: 20 }}>{items}</ol>);
+      continue;
+    }
+
+    // Blank line — skip
+    if (line.trim() === '') { i++; continue; }
+
+    // Regular paragraph
+    elements.push(<p key={i} style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-2)', margin: '4px 0' }}>{inlineFormat(line, `p${i}-`)}</p>);
+    i++;
   }
-  if (current) sections.push(current);
-  return sections;
+
+  return <div>{elements}</div>;
 };
 
 const RCATab = ({ reports }) => {
@@ -192,54 +257,26 @@ const RCACard = ({ report }) => {
   const [expanded, setExpanded] = React.useState(true);
   const theme = __rcaTheme(report.error_class);
   const date = report.created_at ? new Date(report.created_at).toLocaleString() : '—';
-  const sections = __parseRCASections(report.analysis);
 
   return (
-    <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.line}`, background: 'var(--surface-1)' }}>
-      {/* Colored header band */}
-      <div style={{ background: theme.bg, borderBottom: `1px solid ${theme.line}`, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}
-           onClick={() => setExpanded(!expanded)}>
+    <div style={{ borderRadius: 12, border: '1px solid var(--line)', background: 'var(--surface-1)', overflow: 'hidden' }}>
+      <div
+        style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', cursor: 'pointer', background: 'var(--surface-2)' }}
+        onClick={() => setExpanded(e => !e)}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 8, background: 'rgba(0,0,0,0.25)', border: `1px solid ${theme.line}` }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={theme.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
-            </svg>
-          </span>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: theme.color }}>{theme.label}</span>
-              <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{report.message_id}</span>
-            </div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>{date}</div>
-          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: theme.color }}>{theme.label}</span>
+          <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{report.message_id}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{date}</span>
         </div>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
              style={{ transition: 'transform 150ms', transform: expanded ? 'rotate(180deg)' : 'none', color: 'var(--text-3)', flexShrink: 0 }}>
-          <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
-
       {expanded && (
-        <div style={{ padding: '16px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-          {sections.filter(s => s.heading).map((s, i) => {
-            const meta = __RCA_SECTION_META[i % __RCA_SECTION_META.length];
-            return (
-              <div key={i} style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '14px 16px', border: '1px solid var(--line)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-                  <span style={{ color: meta.color, display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.heading}</span>
-                </div>
-                <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-2)', margin: 0 }}>
-                  {s.body.join('\n').trim()}
-                </p>
-              </div>
-            );
-          })}
-          {sections.filter(s => !s.heading && s.body.join('').trim()).map((s, i) => (
-            <div key={`pre-${i}`} style={{ gridColumn: '1 / -1', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6 }}>
-              {s.body.join('\n').trim()}
-            </div>
-          ))}
+        <div style={{ padding: '16px 18px' }}>
+          <MarkdownContent text={report.analysis} />
         </div>
       )}
     </div>
