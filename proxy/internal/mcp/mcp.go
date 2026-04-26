@@ -97,10 +97,11 @@ You have access to the following tools to help diagnose and repair the message:
 - graph_rag_query: Query a knowledge graph built from codebase and incident data. Use method='local' for specific entity/error questions (handlers, configs, schemas). Use method='global' for broad system-wide questions.
 - bigquery_last_n_query: Fetch recent rows from a BigQuery table to inspect expected schemas or historical data patterns.
 
-Analyze the raw message payload using these tools to understand the expected schema, then return a JSON object with exactly these three fields:
+Analyze the raw message payload using these tools to understand the expected schema, then return a JSON object with exactly these four fields:
 - "error_class": a short string describing the type of issue found (e.g. "type_mismatch", "schema_drift", "malformed_json", "missing_field", "encoding", or any other appropriate label)
 - "fixed_payload": the corrected JSON payload as a string
 - "confidence_score": an integer from 0 to 100 representing how confident you are in the diagnosis and repair
+- "tools_used": an array of strings listing every MCP tool you called, the dataset/resource, and the parameters used (e.g. ["fetch_gcp_logs: resource_type=cloud_run_revision severity=ERROR", "graph_rag_query: method=local query=..."])
 
 Respond with only the JSON object, no extra text.`
 
