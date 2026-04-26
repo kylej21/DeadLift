@@ -172,16 +172,17 @@ const FixesTab = ({ fixes, setFixes }) => {
 
 const FixCard = ({ fix, onApprove, onDeny }) => {
   const [expanded, setExpanded] = React.useState(fix.status === 'pending');
-  const [rcaState, setRcaState] = React.useState(null); // null | 'loading' | { analysis }
+  const [rcaLoading, setRcaLoading] = React.useState(false);
   const handleGenerateRCA = async (e) => {
     e.stopPropagation();
-    setRcaState('loading');
+    setRcaLoading(true);
     try {
-      const result = await window.api.generateRCA(fix.id);
-      setRcaState({ analysis: result.analysis });
+      await window.api.generateRCA(fix.id);
+      window.showToast('Root cause report queued — check the Root cause tab');
     } catch (err) {
-      setRcaState({ error: err.message });
+      window.showToast('RCA failed: ' + err.message, 'error');
     }
+    setRcaLoading(false);
   };
   const statusPill = fix.status === 'fixed'
     ? <span className="pill pill-green"><span className="dot" style={{ background: 'var(--green)' }} />Fixed{fix.fixedAt ? ` · ${fix.fixedAt}` : ''}</span>
@@ -238,23 +239,10 @@ const FixCard = ({ fix, onApprove, onDeny }) => {
             </div>
           )}
 
-          {/* RCA inline result */}
-          {rcaState && (
-            <div style={{ padding: '12px 18px', borderTop: '1px solid var(--line)' }}>
-              <div className="eyebrow" style={{ marginBottom: 8, fontSize: 10 }}>Root cause analysis</div>
-              {rcaState === 'loading'
-                ? <div className="muted" style={{ fontSize: 13 }}>Analyzing…</div>
-                : rcaState.error
-                ? <div style={{ fontSize: 12, color: 'var(--red)' }}>{rcaState.error}</div>
-                : <pre style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', color: 'var(--text-2)', margin: 0 }}>{rcaState.analysis}</pre>
-              }
-            </div>
-          )}
-
           {/* Actions */}
           <div style={{ padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-            <button className="btn btn-sm btn-ghost" onClick={handleGenerateRCA} disabled={rcaState === 'loading'}>
-              {rcaState === 'loading' ? 'Analyzing…' : 'Generate root cause'}
+            <button className="btn btn-sm btn-ghost" onClick={handleGenerateRCA} disabled={rcaLoading}>
+              {rcaLoading ? 'Analyzing…' : 'Generate root cause'}
             </button>
             {fix.status === 'pending' && (
               <div style={{ display: 'flex', gap: 8 }}>
