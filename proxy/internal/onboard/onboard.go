@@ -12,17 +12,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"proxy/internal/models"
 	"proxy/internal/pubsub"
 	"proxy/internal/store"
+
+	"github.com/google/uuid"
 )
 
 const googleAuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
 
 // GraphragTriggerer is implemented by the graphrag proxy to kick off background indexing.
 type GraphragTriggerer interface {
-	TriggerOnboard(orgID, repoURL string)
+	TriggerOnboard(orgID, repoURL, githubToken string)
 }
 
 // Config holds all dependencies the onboarding handlers need.
@@ -36,6 +37,9 @@ type Config struct {
 	Store        *store.Store
 	StateStore   *sync.Map
 	Graphrag     GraphragTriggerer
+	Github       interface {
+		GetToken(string) (string, bool)
+	}
 }
 
 func generateState() (string, error) {
@@ -71,6 +75,7 @@ func (c *Config) HandleConnect(w http.ResponseWriter, r *http.Request) {
 		NotificationEmail string          `json:"notification_email"`
 		GithubURL         string          `json:"github_url"`
 		WebURL            string          `json:"web_url"`
+		GithubStateID     string          `json:"github_state_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
@@ -85,6 +90,11 @@ func (c *Config) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.BatchingThreshold == 0 {
 		req.BatchingThreshold = 5
+	}
+
+	var githubToken string
+	if req.GithubStateID != "" && c.Github != nil {
+		githubToken, _ = c.Github.GetToken(req.GithubStateID)
 	}
 
 	state, err := generateState()
@@ -103,6 +113,7 @@ func (c *Config) HandleConnect(w http.ResponseWriter, r *http.Request) {
 		NotificationEmail: req.NotificationEmail,
 		GithubURL:         req.GithubURL,
 		WebURL:            req.WebURL,
+		GithubToken:       githubToken,
 	})
 
 	enc := json.NewEncoder(w)
@@ -218,6 +229,7 @@ func (c *Config) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		NotificationEmail: payload.NotificationEmail,
 		GithubURL:         payload.GithubURL,
 		WebURL:            payload.WebURL,
+		GithubToken:       payload.GithubToken,
 		CreatedAt:         createdAt,
 	}
 
@@ -228,7 +240,7 @@ func (c *Config) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if payload.GithubURL != "" && c.Graphrag != nil {
-		go c.Graphrag.TriggerOnboard(payload.OrgID, payload.GithubURL)
+		go c.Graphrag.TriggerOnboard(payload.OrgID, payload.GithubURL, payload.GithubToken)
 	}
 
 	http.Redirect(w, r, c.ClientURL+"/#/app?org_id="+payload.OrgID, http.StatusTemporaryRedirect)

@@ -71,6 +71,13 @@ func (s *Store) GetAllUsers(ctx context.Context) ([]models.User, error) {
 	return users, nil
 }
 
+func (s *Store) UpdateGithubToken(ctx context.Context, orgID, token string) error {
+	_, err := s.fs.Collection("users").Doc(orgID).Update(ctx, []firestore.Update{
+		{Path: "github_token", Value: token},
+	})
+	return err
+}
+
 // ── Tasks ────────────────────────────────────────────────────────────────────
 
 func (s *Store) CreateTask(ctx context.Context, task models.Task) error {

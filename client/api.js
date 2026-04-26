@@ -147,10 +147,30 @@ window.api.startOnboarding = async (config) => {
       auto_republish: autoRepublish,
       github_url: config.githubUrl || '',
       web_url: config.webUrl || '',
+      github_state_id: config.githubStateId || '',
     }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json(); // { oauth_url: '...' }
+};
+
+window.api.checkRepoVisibility = async (githubUrl) => {
+  const match = githubUrl.match(/github\.com\/([^/]+)\/([^/\s#]+)/);
+  if (!match) return null;
+  const [, owner, repo] = match;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo.replace(/\.git$/, '')}`);
+    if (res.ok) return (await res.json()).private;
+    return true; // 404/403 → assume private
+  } catch {
+    return null;
+  }
+};
+
+window.api.getGithubAuthUrl = async () => {
+  const res = await fetch(`${PROXY_URL}/api/github/auth-url`);
+  if (!res.ok) throw new Error('Failed to get GitHub auth URL');
+  return res.json();
 };
 
 // ---------- DASHBOARD ----------

@@ -22,14 +22,24 @@ const Onboarding = ({ error: initError }) => {
     notifications: { slack: '', email: window.session.user?.email || '', pagerduty: '' },
   });
   const [submitError, setSubmitError] = React.useState(initError || null);
+  const [repoPrivate, setRepoPrivate] = React.useState(null);
+  const [githubStateId, setGithubStateId] = React.useState(null);
   const upd = (patch) => setCfg(c => ({ ...c, ...patch }));
   const next = () => setStep(s => Math.min(s + 1, ONBOARD_STEPS.length - 1));
   const prev = () => setStep(s => Math.max(s - 1, 0));
 
+  React.useEffect(() => {
+    if (!cfg.githubUrl) { setRepoPrivate(null); return; }
+    const timer = setTimeout(() => {
+      window.api.checkRepoVisibility(cfg.githubUrl).then(setRepoPrivate);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [cfg.githubUrl]);
+
   const finish = async () => {
     setSubmitError(null);
     try {
-      const { oauth_url } = await window.api.startOnboarding(cfg);
+      const { oauth_url } = await window.api.startOnboarding({ ...cfg, githubStateId });
       window.location.href = oauth_url;
     } catch (e) {
       setSubmitError(e.message || 'Failed to start onboarding. Please try again.');
@@ -39,7 +49,7 @@ const Onboarding = ({ error: initError }) => {
   const panels = [
     <StepGCP cfg={cfg} upd={upd} />,
     <StepPubSub cfg={cfg} upd={upd} />,
-    <StepContext cfg={cfg} upd={upd} />,
+    <StepContext cfg={cfg} upd={upd} repoPrivate={repoPrivate} githubStateId={githubStateId} setGithubStateId={setGithubStateId} />,
     <StepApproval cfg={cfg} upd={upd} />,
     <StepBatching cfg={cfg} upd={upd} />,
     <StepNotify cfg={cfg} upd={upd} />,
@@ -123,7 +133,7 @@ const StepPubSub = ({ cfg, upd }) => (
   </div>
 );
 
-const StepContext = ({ cfg, upd }) => {
+const StepContext = ({ cfg, upd, repoPrivate, githubStateId, setGithubStateId }) => {
   const [uploading, setUploading] = React.useState(false);
   const addFile = async (e) => {
     const file = e.target.files[0];
@@ -141,6 +151,32 @@ const StepContext = ({ cfg, upd }) => {
         <div>
           <label className="lbl">GitHub repository URL</label>
           <input className="field" value={cfg.githubUrl} onChange={e => upd({ githubUrl: e.target.value })} placeholder="https://github.com/acme/payments-api" />
+          {repoPrivate === true && (
+            githubStateId
+              ? <div style={{marginTop: 6, color: '#16a34a', fontSize: 13}}>&#10003; GitHub connected</div>
+              : <div style={{marginTop: 6, padding: '8px 12px', background: '#fef3c7', border: '1px solid #d97706', borderRadius: 6, fontSize: 13, display: 'flex', alignItems: 'center', gap: 10}}>
+                  <span>This repo appears private.</span>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const { oauth_url, state_id } = await window.api.getGithubAuthUrl();
+                        const popup = window.open(oauth_url, 'github-oauth', 'width=600,height=700,noopener=0');
+                        window.addEventListener('message', (e) => {
+                          if (e.data && e.data.stateId === state_id) {
+                            setGithubStateId(state_id);
+                            if (popup && !popup.closed) popup.close();
+                          }
+                        }, { once: true });
+                      } catch (err) {
+                        alert('Failed to start GitHub auth: ' + err.message);
+                      }
+                    }}
+                    style={{padding: '4px 10px', background: '#1f2937', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13}}
+                  >
+                    Connect GitHub
+                  </button>
+                </div>
+          )}
         </div>
         <div>
           <label className="lbl">Web scrape URL</label>

@@ -1,9 +1,9 @@
 import json
 import logging
 import os
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+import subprocess
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
@@ -14,7 +14,7 @@ _env_mode = os.environ.get("ENV_MODE", "openai")
 load_dotenv(Path(__file__).parent / f".env.{_env_mode}")
 
 from .jobs.manager import JobStatus, job_manager
-from .pipeline.clone import clone_repo, get_changed_files, get_current_sha
+from .pipeline.clone import clone_repo, get_changed_files, get_current_sha, pull_repo
 from .pipeline.configure import configure
 from .pipeline.index import run_index, run_update
 from .pipeline.preprocess import preprocess_all, preprocess_files
@@ -35,17 +35,19 @@ storage = create_storage()
 class OnboardRequest(BaseModel):
     repo_url: str
     client_id: str
+    github_token: str = ""
 
 
 class UpdateRequest(BaseModel):
     client_id: str
+    github_token: str = ""
 
 
-def _run_onboard(job_id: str, repo_url: str, client_id: str):
+def _run_onboard(job_id: str, repo_url: str, client_id: str, github_token: str = ""):
     log.info("[%s] Onboard started: client=%s repo=%s", job_id, client_id, repo_url)
     try:
         job_manager.update_job(job_id, JobStatus.RUNNING, "Cloning repository")
-        repo_path = clone_repo(repo_url, str(Path("kb/repos") / client_id))
+        repo_path = clone_repo(repo_url, str(Path("kb/repos") / client_id), github_token)
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Preprocessing files")
         graphrag_root = str(storage.get_root(client_id))
@@ -72,7 +74,7 @@ def _run_onboard(job_id: str, repo_url: str, client_id: str):
         job_manager.update_job(job_id, JobStatus.FAILED, str(exc))
 
 
-def _run_update(job_id: str, client_id: str):
+def _run_update(job_id: str, client_id: str, github_token: str = ""):
     log.info("[%s] Update started: client=%s", job_id, client_id)
     try:
         state = storage.get_state(client_id)
@@ -86,8 +88,7 @@ def _run_update(job_id: str, client_id: str):
         log.info("[%s] Fetching repo: %s", job_id, repo_path)
 
         job_manager.update_job(job_id, JobStatus.RUNNING, "Fetching latest changes")
-        subprocess.run(["git", "-C", repo_path, "fetch", "origin"], check=True)
-        subprocess.run(["git", "-C", repo_path, "pull"], check=True)
+        pull_repo(repo_path, github_token)
 
         changed_files = get_changed_files(repo_path, state.last_indexed_sha)
         if not changed_files:
@@ -115,7 +116,7 @@ def _run_update(job_id: str, client_id: str):
 @app.post("/onboard")
 def onboard(req: OnboardRequest, background_tasks: BackgroundTasks):
     job = job_manager.create_job(req.client_id)
-    background_tasks.add_task(_run_onboard, job.job_id, req.repo_url, req.client_id)
+    background_tasks.add_task(_run_onboard, job.job_id, req.repo_url, req.client_id, req.github_token)
     return {"job_id": job.job_id}
 
 
@@ -125,7 +126,7 @@ def update(req: UpdateRequest, background_tasks: BackgroundTasks):
     if state is None:
         raise HTTPException(status_code=404, detail=f"Client {req.client_id} not found")
     job = job_manager.create_job(req.client_id)
-    background_tasks.add_task(_run_update, job.job_id, req.client_id)
+    background_tasks.add_task(_run_update, job.job_id, req.client_id, req.github_token)
     return {"job_id": job.job_id}
 
 

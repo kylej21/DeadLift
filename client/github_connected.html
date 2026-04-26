@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head><title>GitHub Connected</title></head>
+<body>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const stateId = params.get('state_id');
+  if (stateId && window.opener) {
+    window.opener.postMessage({ stateId }, '*');
+  }
+  window.close();
+</script>
+<p>Connected. You can close this window.</p>
+</body>
+</html>
