@@ -29,7 +29,8 @@ SYSTEM_PROMPT = """You are an infrastructure and data analyst with access to thr
 Pick the right tool based on the user's question. You may chain tools across turns —
 e.g., spot an error in GCP logs, then look it up in GraphRAG, then check BigQuery for
 related records. Always state which tool, dataset/resource, and parameters you used,
-then summarize findings clearly.
+then summarize findings clearly. Additionally, mention the kind of error you fixed as well 
+as a confidence score from 0-100. 
 """
 
 
