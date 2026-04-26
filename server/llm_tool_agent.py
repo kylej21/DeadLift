@@ -7,7 +7,7 @@ import os
 from openai import OpenAI
 
 llm = OpenAI(
-    base_url=os.getenv("VLLM_BASE_URL", "http://127.0.0.1:8000/v1"),
+    base_url=os.getenv("VLLM_BASE_URL", "http://10.30.11.192:8000/v11"),
     api_key=os.getenv("VLLM_API_KEY", "dummy"),
 )
 MODEL = os.getenv("VLLM_MODEL", "incident-gemma")
