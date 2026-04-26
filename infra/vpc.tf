@@ -69,7 +69,7 @@ resource "google_compute_vpn_tunnel" "onprem" {
 resource "google_compute_route" "onprem" {
   name                = "deadlift-onprem-route"
   network             = google_compute_network.vpc.name
-  dest_range          = "10.30.112.192/32"
+  dest_range          = "10.40.115.4/32"
   next_hop_vpn_tunnel = google_compute_vpn_tunnel.onprem.id
   priority            = 1000
 }
