@@ -22,6 +22,8 @@ resource "google_project_service" "apis" {
     "iamcredentials.googleapis.com",
     "bigquery.googleapis.com",
     "firestore.googleapis.com",
+    "compute.googleapis.com",
+    "vpcaccess.googleapis.com",
   ])
   service            = each.value
   disable_on_destroy = false
