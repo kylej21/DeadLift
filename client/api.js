@@ -23,8 +23,9 @@ window.api.signUp = async ({ email, password }) => {
 };
 
 window.api.signOut = async () => {
-  await __delay(150);
-  // TODO: POST /api/auth/signout
+  window.session.setOrgId(null);
+  window.session.setUser(null);
+  location.hash = '#/signin';
   return { ok: true };
 };
 
@@ -236,7 +237,22 @@ window.api.denyBatch = async (errorClass) => {
 
 window.api.getAnalytics = async () => null; // analytics derived from fixes in Dashboard
 
-window.api.getRCAReports = async () => [];
+window.api.getRCAReports = async () => {
+  const orgId = window.session.orgId;
+  if (!orgId) return [];
+  const res = await fetch(`${PROXY_URL}/api/rca?org_id=${orgId}`);
+  if (!res.ok) return [];
+  return res.json();
+};
+
+window.api.generateRCA = async (taskId) => {
+  const res = await fetch(`${PROXY_URL}/api/rca/${taskId}`, { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`RCA failed ${res.status}: ${body}`);
+  }
+  return res.json();
+};
 
 window.api.terminateService = async () => {
   await __delay(900);

@@ -6,11 +6,12 @@ import (
 	"log"
 	"time"
 
-	"github.com/google/uuid"
 	"proxy/internal/mcp"
 	"proxy/internal/models"
 	"proxy/internal/pubsub"
 	"proxy/internal/store"
+
+	"github.com/google/uuid"
 )
 
 // Worker polls each org's DLQ subscription and creates repair tasks.
@@ -32,6 +33,18 @@ func (w *Worker) Start(ctx context.Context) {
 		if err != nil {
 			log.Printf("worker: failed to load orgs: %v", err)
 			return
+		}
+		current := map[string]bool{}
+		for _, u := range users {
+			current[u.OrgID] = true
+		}
+		// Cancel goroutines for orgs no longer in Firestore.
+		for orgID, cancel := range active {
+			if !current[orgID] {
+				log.Printf("worker: org %s removed from Firestore, stopping goroutine", orgID)
+				cancel()
+				delete(active, orgID)
+			}
 		}
 		for _, u := range users {
 			if _, running := active[u.OrgID]; !running {
@@ -101,7 +114,7 @@ func allAutoRepublish(m map[string]bool) bool {
 }
 
 func (w *Worker) processMessage(ctx context.Context, user models.User, token string, msg models.PubSubMessage) error {
-	// Skip messages already repaired by us to prevent feedback loops.
+	// Skip messages already repaired by us to prevent feedback loops. redeploy trigger
 	if msg.Message.Attributes["_deadlift_repaired"] == "true" {
 		log.Printf("worker[%s]: skipping already-repaired message %s", user.OrgID, msg.Message.MessageID)
 		_ = pubsub.AckMessages(ctx, token, user.DLQSubscription, []string{msg.AckID})
