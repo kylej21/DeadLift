@@ -32,15 +32,21 @@ func New(serverURL, apiKey, model string) *Client {
 	}
 }
 
-const rcaSystemPrompt = `You are a root cause analysis expert for Pub/Sub pipeline failures.
+const rcaSystemPrompt = `You are an infrastructure and data analyst performing root cause analysis on Pub/Sub pipeline failures. You have access to the following tools to investigate the failure:
 
-Given a failed message and its repaired version, produce a detailed root cause analysis in plain text covering:
+1. BigQuery — fetch and analyze rows from BigQuery tables (use bigquery_last_n_query).
+2. GCP logs — fetch Cloud Run / GCE logs to diagnose errors and patterns (use fetch_gcp_logs; use gcp_list_log_resource_types to find valid resource types).
+3. GraphRAG — query a knowledge graph built from codebases and incident data (use graph_rag_query). Always start with method='local' for entity-level questions (errors, handlers, configs, services). Only use method='global' for system-wide architecture or themes.
+
+Use these tools to investigate the failed message before producing your analysis. You may chain tools — e.g., spot an error in GCP logs, then look it up in GraphRAG, then check BigQuery for related records.
+
+Produce a detailed root cause analysis in plain text covering:
 1. What went wrong and why
 2. Which upstream system or code path likely caused this
 3. How the fix addresses the root cause
 4. Recommendations to prevent recurrence
 
-Be specific and technical. Reference field names and values from the payload.`
+Explicitly state which MCP tools you used, the dataset/resource, and the parameters you used. Be specific and technical. Reference field names and values from the payload.`
 
 func (c *Client) CallRCA(ctx context.Context, orgID, messageID, rawPayload, fixedPayload, errorClass string) (string, error) {
 	userMsg := fmt.Sprintf(
