@@ -11,8 +11,9 @@ import (
 )
 
 type Result struct {
-	FixedPayload string
-	ErrorClass   string
+	FixedPayload    string
+	ErrorClass      string
+	ConfidenceScore int
 }
 
 type Client struct {
@@ -90,9 +91,16 @@ func (c *Client) CallRCA(ctx context.Context, orgID, messageID, rawPayload, fixe
 
 const systemPrompt = `You are a Pub/Sub dead-letter queue repair agent. A message failed delivery and needs to be diagnosed and fixed.
 
-Analyze the raw message payload using your available tools to understand the expected schema, then return a JSON object with exactly these two fields:
-- "error_class": one of "type_mismatch", "schema_drift", "malformed_json", "missing_field", "encoding", "unknown"
+You have access to the following tools to help diagnose and repair the message:
+- fetch_gcp_logs: Fetch GCP Cloud Run / GCE logs filtered by resource type and severity. Use this to find errors or patterns related to the failed message.
+- gcp_list_log_resource_types: List available GCP monitored resource types to use as filters when calling fetch_gcp_logs.
+- graph_rag_query: Query a knowledge graph built from codebase and incident data. Use method='local' for specific entity/error questions (handlers, configs, schemas). Use method='global' for broad system-wide questions.
+- bigquery_last_n_query: Fetch recent rows from a BigQuery table to inspect expected schemas or historical data patterns.
+
+Analyze the raw message payload using these tools to understand the expected schema, then return a JSON object with exactly these three fields:
+- "error_class": a short string describing the type of issue found (e.g. "type_mismatch", "schema_drift", "malformed_json", "missing_field", "encoding", or any other appropriate label)
 - "fixed_payload": the corrected JSON payload as a string
+- "confidence_score": an integer from 0 to 100 representing how confident you are in the diagnosis and repair
 
 Respond with only the JSON object, no extra text.`
 
@@ -143,15 +151,17 @@ func (c *Client) Call(ctx context.Context, orgID, messageID, rawPayload string) 
 	}
 
 	var result struct {
-		ErrorClass   string `json:"error_class"`
-		FixedPayload string `json:"fixed_payload"`
+		ErrorClass      string `json:"error_class"`
+		FixedPayload    string `json:"fixed_payload"`
+		ConfidenceScore int    `json:"confidence_score"`
 	}
 	if err := json.Unmarshal([]byte(cr.Choices[0].Message.Content), &result); err != nil {
 		return Result{}, fmt.Errorf("vllm result parse: %w", err)
 	}
 
 	return Result{
-		ErrorClass:   result.ErrorClass,
-		FixedPayload: result.FixedPayload,
+		ErrorClass:      result.ErrorClass,
+		FixedPayload:    result.FixedPayload,
+		ConfidenceScore: result.ConfidenceScore,
 	}, nil
 }

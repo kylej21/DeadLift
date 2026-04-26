@@ -133,12 +133,18 @@ func (w *Worker) processMessage(ctx context.Context, user models.User, token str
 	}
 
 	taskID := uuid.New().String()
+	attrs := make(map[string]string, len(msg.Message.Attributes)+1)
+	for k, v := range msg.Message.Attributes {
+		attrs[k] = v
+	}
+	attrs["_deadlift_confidence"] = fmt.Sprintf("%d", result.ConfidenceScore)
+
 	task := models.Task{
 		TaskID:       taskID,
 		OrgID:        user.OrgID,
 		MessageID:    msg.Message.MessageID,
 		RawPayload:   rawPayload,
-		Attributes:   msg.Message.Attributes,
+		Attributes:   attrs,
 		FixedPayload: result.FixedPayload,
 		ErrorClass:   result.ErrorClass,
 		Status:       "pending_approval",
