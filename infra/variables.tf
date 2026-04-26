@@ -55,3 +55,19 @@ variable "onprem_cidr" {
   type        = string
   default     = "10.30.112.0/24"
 }
+
+variable "vllm_server_url" {
+  description = "Base URL of the vLLM inference server"
+  type        = string
+}
+
+variable "vllm_api_key" {
+  description = "API key for the vLLM server"
+  type        = string
+  sensitive   = true
+}
+
+variable "vllm_model" {
+  description = "Model name to use for vLLM completions"
+  type        = string
+}

@@ -15,8 +15,9 @@ import (
 
 // Worker polls each org's DLQ subscription and creates repair tasks.
 type Worker struct {
-	RepairSA string
-	Store    *store.Store
+	RepairSA  string
+	Store     *store.Store
+	MCPClient *mcp.Client
 }
 
 func (w *Worker) Start(ctx context.Context) {
@@ -113,7 +114,7 @@ func (w *Worker) processMessage(ctx context.Context, user models.User, token str
 	}
 	rawPayload := string(rawBytes)
 
-	result, err := mcp.CallMCP(ctx, rawPayload)
+	result, err := w.MCPClient.Call(ctx, user.OrgID, msg.Message.MessageID, rawPayload)
 	if err != nil {
 		return err
 	}
