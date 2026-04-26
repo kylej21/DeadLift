@@ -58,7 +58,7 @@ func (h *Handler) HandleApprove(w http.ResponseWriter, r *http.Request) {
 	// Stamp all original attributes through plus our repaired marker.
 	outAttrs := make(map[string]string, len(task.Attributes)+1)
 	for k, v := range task.Attributes {
-		if k != "_deadlift_confidence" {
+		if k != "_deadlift_confidence" && k != "simulate_failure" {
 			outAttrs[k] = v
 		}
 	}

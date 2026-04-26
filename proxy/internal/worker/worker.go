@@ -165,7 +165,9 @@ func (w *Worker) processMessage(ctx context.Context, user models.User, token str
 	if allAutoRepublish(user.AutoRepublish) {
 		outAttrs := make(map[string]string, len(msg.Message.Attributes)+1)
 		for k, v := range msg.Message.Attributes {
-			outAttrs[k] = v
+			if k != "_deadlift_confidence" && k != "simulate_failure" {
+				outAttrs[k] = v
+			}
 		}
 		outAttrs["_deadlift_repaired"] = "true"
 		if err := pubsub.PublishMessage(ctx, token, user.MainTopic, result.FixedPayload, outAttrs); err != nil {
