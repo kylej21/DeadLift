@@ -69,7 +69,7 @@ const __taskToFix = (task) => ({
         : task.status,
   category: __errorClassLabel(task.error_class),
   errorClass: task.error_class || '',
-  confidence: 0.85,
+  confidence: (parseInt(task.attributes?._deadlift_confidence) || 0) / 100,
   subscription: task.attributes?.dlq_subscription || task.org_id,
   topic: task.attributes?.main_topic || '—',
   receivedAt: __timeAgo(task.created_at),
