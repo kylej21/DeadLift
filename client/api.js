@@ -135,6 +135,7 @@ window.api.startOnboarding = async (config) => {
   CATS.forEach(cat => {
     autoRepublish[cat] = (config.categoryOverrides[cat] || config.approvalMode) === 'auto';
   });
+  console.log('[onboard] starting onboarding, github_state_id:', config.githubStateId || '(none)');
   const res = await fetch(`${PROXY_URL}/api/onboard/connect`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -146,7 +147,6 @@ window.api.startOnboarding = async (config) => {
       batching_threshold: config.batchThreshold,
       auto_republish: autoRepublish,
       github_url: config.githubUrl || '',
-      web_url: config.webUrl || '',
       github_state_id: config.githubStateId || '',
     }),
   });
@@ -154,23 +154,13 @@ window.api.startOnboarding = async (config) => {
   return res.json(); // { oauth_url: '...' }
 };
 
-window.api.checkRepoVisibility = async (githubUrl) => {
-  const match = githubUrl.match(/github\.com\/([^/]+)\/([^/\s#]+)/);
-  if (!match) return null;
-  const [, owner, repo] = match;
-  try {
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo.replace(/\.git$/, '')}`);
-    if (res.ok) return (await res.json()).private;
-    return true; // 404/403 → assume private
-  } catch {
-    return null;
-  }
-};
-
 window.api.getGithubAuthUrl = async () => {
+  console.log('[github-oauth] fetching auth URL from proxy');
   const res = await fetch(`${PROXY_URL}/api/github/auth-url`);
   if (!res.ok) throw new Error('Failed to get GitHub auth URL');
-  return res.json();
+  const data = await res.json();
+  console.log('[github-oauth] received auth URL, state_id:', data.state_id);
+  return data;
 };
 
 // ---------- DASHBOARD ----------

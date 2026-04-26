@@ -96,6 +96,11 @@ func (c *Config) HandleConnect(w http.ResponseWriter, r *http.Request) {
 	if req.GithubStateID != "" && c.Github != nil {
 		githubToken, _ = c.Github.GetToken(req.GithubStateID)
 	}
+	if githubToken != "" {
+		log.Printf("onboard: resolved github token for state_id=%s", req.GithubStateID)
+	} else {
+		log.Printf("onboard: no github token for state_id=%q (public repo or oauth not completed)", req.GithubStateID)
+	}
 
 	state, err := generateState()
 	if err != nil {
