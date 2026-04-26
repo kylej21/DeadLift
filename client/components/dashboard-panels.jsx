@@ -35,45 +35,55 @@ const AnalyticsTab = ({ data }) => {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        {/* Category breakdown */}
+        {/* Subscription breakdown */}
         <div className="surface" style={{ padding: 20 }}>
-          <div className="eyebrow" style={{ marginBottom: 16 }}>Failure categories</div>
-          {data.categories.map(c => (
-            <div key={c.name} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 5 }}>
-                <span style={{ color: 'var(--text-2)' }}>{c.name}</span>
-                <span className="mono" style={{ color: 'var(--text)' }}>{c.count} <span className="muted">({c.pct}%)</span></span>
+          <div className="eyebrow" style={{ marginBottom: 16 }}>By subscription</div>
+          {data.categories.length === 0
+            ? <p className="muted-2" style={{ fontSize: 13, margin: 0 }}>No data yet.</p>
+            : data.categories.map(c => (
+              <div key={c.name} style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 5 }}>
+                  <span className="mono" style={{ color: 'var(--text-2)', fontSize: 12 }}>{c.name}</span>
+                  <span className="mono" style={{ color: 'var(--text)' }}>{c.count} <span className="muted">({c.pct}%)</span></span>
+                </div>
+                <div style={{ height: 5, background: 'var(--surface-3)', borderRadius: 999, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${c.pct}%`, background: c.color, borderRadius: 999, transition: 'width 500ms ease' }} />
+                </div>
               </div>
-              <div style={{ height: 5, background: 'var(--surface-3)', borderRadius: 999, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${c.pct}%`, background: c.color, borderRadius: 999, transition: 'width 500ms ease' }} />
-              </div>
-            </div>
-          ))}
+            ))
+          }
         </div>
 
         {/* Per-topic table */}
         <div className="surface" style={{ padding: 20 }}>
           <div className="eyebrow" style={{ marginBottom: 16 }}>Per-topic breakdown</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                <th style={{ textAlign: 'left', padding: '6px 0', color: 'var(--text-3)', fontWeight: 500, fontSize: 11.5 }}>Topic</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-3)', fontWeight: 500, fontSize: 11.5 }}>DLQ</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-3)', fontWeight: 500, fontSize: 11.5 }}>Fixed</th>
-                <th style={{ textAlign: 'right', padding: '6px 0', color: 'var(--text-3)', fontWeight: 500, fontSize: 11.5 }}>MTTR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topics.map(t => (
-                <tr key={t.name} style={{ borderBottom: '1px solid var(--line)' }}>
-                  <td className="mono" style={{ padding: '8px 0', fontSize: 12.5 }}>{t.name}</td>
-                  <td style={{ textAlign: 'right', padding: '8px 8px' }}>{t.dlq}</td>
-                  <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--green)' }}>{t.fixed}</td>
-                  <td className="mono" style={{ textAlign: 'right', padding: '8px 0', fontSize: 12 }}>{t.mttr}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {data.topics.length === 0
+            ? <p className="muted-2" style={{ fontSize: 13, margin: 0 }}>No data yet.</p>
+            : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--line)' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 0', color: 'var(--text-3)', fontWeight: 500, fontSize: 11.5 }}>Topic</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-3)', fontWeight: 500, fontSize: 11.5 }}>DLQ</th>
+                    <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--text-3)', fontWeight: 500, fontSize: 11.5 }}>Fixed</th>
+                    <th style={{ textAlign: 'right', padding: '6px 0', color: 'var(--text-3)', fontWeight: 500, fontSize: 11.5 }}>Fix rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.topics.map(t => (
+                    <tr key={t.name} style={{ borderBottom: '1px solid var(--line)' }}>
+                      <td className="mono" style={{ padding: '8px 0', fontSize: 12.5 }}>{t.name}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px' }}>{t.dlq}</td>
+                      <td style={{ textAlign: 'right', padding: '8px 8px', color: 'var(--green)' }}>{t.fixed}</td>
+                      <td className="mono" style={{ textAlign: 'right', padding: '8px 0', fontSize: 12, color: t.dlq > 0 && (t.fixed / t.dlq) >= 0.8 ? 'var(--green)' : 'var(--text-3)' }}>
+                        {t.dlq > 0 ? `${Math.round((t.fixed / t.dlq) * 100)}%` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          }
         </div>
       </div>
     </div>

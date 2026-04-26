@@ -10,6 +10,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 
+	"proxy/internal/batches"
 	"proxy/internal/graphrag"
 	"proxy/internal/onboard"
 	"proxy/internal/store"
@@ -75,6 +76,11 @@ func main() {
 		Store:    st,
 	}
 
+	bh := &batches.Handler{
+		RepairSA: repairSA,
+		Store:    st,
+	}
+
 	w := &worker.Worker{
 		RepairSA: repairSA,
 		Store:    st,
@@ -92,6 +98,11 @@ func main() {
 	mux.HandleFunc("GET /api/tasks", th.HandleList)
 	mux.HandleFunc("POST /api/tasks/{task_id}/approve", th.HandleApprove)
 	mux.HandleFunc("POST /api/tasks/{task_id}/deny", th.HandleDeny)
+
+	// Batch management
+	mux.HandleFunc("GET /api/batches", bh.HandleList)
+	mux.HandleFunc("POST /api/batches/{batch_id}/approve", bh.HandleApprove)
+	mux.HandleFunc("POST /api/batches/{batch_id}/deny", bh.HandleDeny)
 
 	// GraphRAG context ingestion
 	mux.HandleFunc("POST /api/graphrag/onboard", gr.HandleOnboard)

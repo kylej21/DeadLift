@@ -44,6 +44,12 @@ const __tryFormat = (str) => {
   try { return JSON.stringify(JSON.parse(str), null, 2); } catch { return str || ''; }
 };
 
+const __subscriptionLabel = (s) => {
+  if (!s) return '—';
+  const parts = s.split('/');
+  return parts[parts.length - 1] || s;
+};
+
 const __taskToFix = (task) => ({
   id: task.task_id,
   status: task.status === 'pending_approval' ? 'pending'
@@ -55,12 +61,27 @@ const __taskToFix = (task) => ({
   subscription: task.attributes?.dlq_subscription || task.org_id,
   topic: task.attributes?.main_topic || '—',
   receivedAt: __timeAgo(task.created_at),
+  createdAtRaw: task.created_at || null,
   fixedAt: task.status === 'approved' ? __timeAgo(task.updated_at) : null,
   error: `Pub/Sub message ${task.message_id}`,
+  batchId: task.batch_id || null,
   batch: null,
   before: __tryFormat(task.raw_payload),
   after: __tryFormat(task.fixed_payload),
   sources: [],
+});
+
+const __batchToCard = (batch) => ({
+  id: batch.batch_id,
+  title: `DLQ batch — ${__subscriptionLabel(batch.subscription)}`,
+  rootCause: `${batch.task_count} messages from subscription "${__subscriptionLabel(batch.subscription)}" are pending repair and share the same origin topic.`,
+  affectedCount: batch.task_count,
+  affectedTopics: batch.topic ? [__subscriptionLabel(batch.topic)] : [],
+  category: 'Batch Repair',
+  confidence: 0.85,
+  status: batch.status === 'approved' ? 'fixed' : batch.status,
+  firstSeen: __timeAgo(batch.first_seen),
+  fixSummary: `Apply AI-proposed fixes to all ${batch.task_count} queued messages and republish to main topic.`,
 });
 
 // ---------- ONBOARDING ----------
@@ -152,9 +173,26 @@ window.api.denyFix = async (id) => {
   return { ok: true, id, status: 'denied' };
 };
 
-window.api.getBatches = async () => [];
+window.api.getBatches = async () => {
+  const orgId = window.session.orgId;
+  if (!orgId) return [];
+  const res = await fetch(`${PROXY_URL}/api/batches?org_id=${orgId}`);
+  if (!res.ok) return [];
+  const batches = await res.json();
+  return (batches || []).map(__batchToCard);
+};
 
-window.api.approveBatch = async (id) => ({ ok: true, id, status: 'fixed' });
+window.api.approveBatch = async (id) => {
+  const res = await fetch(`${PROXY_URL}/api/batches/${id}/approve`, { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return { ok: true, id, status: 'fixed' };
+};
+
+window.api.denyBatch = async (id) => {
+  const res = await fetch(`${PROXY_URL}/api/batches/${id}/deny`, { method: 'POST' });
+  if (!res.ok) throw new Error(await res.text());
+  return { ok: true, id, status: 'denied' };
+};
 
 window.api.getAnalytics = async () => null; // analytics derived from fixes in Dashboard
 

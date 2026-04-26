@@ -87,6 +87,16 @@ func (w *Worker) runOrgWorker(ctx context.Context, user models.User) {
 	}
 }
 
+// subscriptionShortName extracts a friendly label from a full resource path or bare name.
+func subscriptionShortName(sub string) string {
+	for i := len(sub) - 1; i >= 0; i-- {
+		if sub[i] == '/' {
+			return sub[i+1:]
+		}
+	}
+	return sub
+}
+
 func allAutoRepublish(m map[string]bool) bool {
 	if len(m) == 0 {
 		return false
@@ -140,6 +150,11 @@ func (w *Worker) processMessage(ctx context.Context, user models.User, token str
 		log.Printf("worker[%s]: ack error: %v", user.OrgID, err)
 	}
 
+	// Batch detection: if threshold is set, group pending tasks from the same subscription.
+	if user.BatchingThreshold > 0 {
+		w.maybeAssignBatch(ctx, user, taskID)
+	}
+
 	if allAutoRepublish(user.AutoRepublish) {
 		outAttrs := make(map[string]string, len(msg.Message.Attributes)+1)
 		for k, v := range msg.Message.Attributes {
@@ -158,4 +173,72 @@ func (w *Worker) processMessage(ctx context.Context, user models.User, token str
 	}
 
 	return nil
+}
+
+func (w *Worker) maybeAssignBatch(ctx context.Context, user models.User, taskID string) {
+	sub := user.DLQSubscription
+	existing, err := w.Store.GetPendingBatchBySubscription(ctx, user.OrgID, sub)
+	if err != nil {
+		log.Printf("worker[%s]: batch lookup error: %v", user.OrgID, err)
+		return
+	}
+
+	if existing != nil {
+		// Add to existing batch and stamp the task.
+		if err := w.Store.AddTaskToBatch(ctx, existing.BatchID, taskID); err != nil {
+			log.Printf("worker[%s]: add to batch error: %v", user.OrgID, err)
+			return
+		}
+		if err := w.Store.UpdateTaskBatchID(ctx, taskID, existing.BatchID); err != nil {
+			log.Printf("worker[%s]: stamp task batch_id error: %v", user.OrgID, err)
+		}
+		log.Printf("worker[%s]: task %s added to batch %s (now %d tasks)", user.OrgID, taskID, existing.BatchID, existing.TaskCount+1)
+		return
+	}
+
+	// Count pending tasks for this subscription to decide whether to create a batch.
+	pendingTasks, err := w.Store.ListTasksByOrg(ctx, user.OrgID)
+	if err != nil {
+		log.Printf("worker[%s]: list tasks for batch check error: %v", user.OrgID, err)
+		return
+	}
+	pendingForSub := 0
+	for _, t := range pendingTasks {
+		if t.Status == "pending_approval" && t.BatchID == "" && (t.Attributes["dlq_subscription"] == sub || t.OrgID == user.OrgID) {
+			pendingForSub++
+		}
+	}
+
+	if pendingForSub < user.BatchingThreshold {
+		return
+	}
+
+	// Threshold crossed — create a new batch and backfill existing unbatched pending tasks.
+	batchID := uuid.New().String()
+	topic := user.MainTopic
+	batch := models.Batch{
+		BatchID:      batchID,
+		OrgID:        user.OrgID,
+		Subscription: sub,
+		Topic:        topic,
+		TaskIDs:      []string{},
+		TaskCount:    0,
+		Status:       "pending",
+		FirstSeen:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := w.Store.CreateBatch(ctx, batch); err != nil {
+		log.Printf("worker[%s]: create batch error: %v", user.OrgID, err)
+		return
+	}
+
+	count := 0
+	for _, t := range pendingTasks {
+		if t.Status == "pending_approval" && t.BatchID == "" {
+			_ = w.Store.AddTaskToBatch(ctx, batchID, t.TaskID)
+			_ = w.Store.UpdateTaskBatchID(ctx, t.TaskID, batchID)
+			count++
+		}
+	}
+	log.Printf("worker[%s]: created batch %s for subscription %s with %d tasks", user.OrgID, batchID, subscriptionShortName(sub), count)
 }
