@@ -12,6 +12,7 @@ import (
 
 	"proxy/internal/batches"
 	"proxy/internal/graphrag"
+	"proxy/internal/mcp"
 	"proxy/internal/onboard"
 	"proxy/internal/store"
 	"proxy/internal/tasks"
@@ -81,9 +82,16 @@ func main() {
 		Store:    st,
 	}
 
+	mcpClient := mcp.New(
+		os.Getenv("VLLM_SERVER_URL"),
+		os.Getenv("VLLM_API_KEY"),
+		os.Getenv("VLLM_MODEL"),
+	)
+
 	w := &worker.Worker{
-		RepairSA: repairSA,
-		Store:    st,
+		RepairSA:  repairSA,
+		Store:     st,
+		MCPClient: mcpClient,
 	}
 
 	mux := http.NewServeMux()
