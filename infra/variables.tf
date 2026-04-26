@@ -71,3 +71,19 @@ variable "vllm_model" {
   description = "Model name to use for vLLM completions"
   type        = string
 }
+
+variable "github_client_id" {
+  description = "GitHub OAuth App client ID"
+  type        = string
+}
+
+variable "github_client_secret" {
+  description = "GitHub OAuth App client secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "github_redirect_uri" {
+  description = "GitHub OAuth redirect URI"
+  type        = string
+}

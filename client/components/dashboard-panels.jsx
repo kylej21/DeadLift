@@ -129,19 +129,25 @@ const MiniBarChart = ({ series }) => {
 // RCA tab
 // ============================================================
 
-const RCATab = ({ reports }) => {
-  if (!reports) return <LoadingState />;
-  if (reports.length === 0) return <EmptyState title="No root cause reports" desc='Click "Generate root cause" on any fix card to create a report.' />;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {reports.map(r => <RCACard key={`${r.org_id}_${r.message_id}`} report={r} />)}
-    </div>
-  );
+const __RCA_CLASS_THEME = {
+  missing_field:  { color: 'var(--amber)',  bg: 'var(--amber-bg)',  line: 'var(--amber-line)',  label: 'Missing field' },
+  type_mismatch:  { color: 'var(--blue)',   bg: 'var(--blue-bg)',   line: 'oklch(0.72 0.14 240 / 0.30)', label: 'Type mismatch' },
+  malformed_json: { color: 'var(--red)',    bg: 'var(--red-bg)',    line: 'var(--red-line)',    label: 'Malformed JSON' },
+  schema_drift:   { color: 'var(--green)',  bg: 'var(--green-bg)',  line: 'var(--green-line)',  label: 'Schema drift' },
+  encoding:       { color: 'oklch(0.72 0.14 290)', bg: 'oklch(0.72 0.14 290 / 0.10)', line: 'oklch(0.72 0.14 290 / 0.30)', label: 'Encoding' },
+  unknown:        { color: 'var(--text-3)', bg: 'var(--surface-2)', line: 'var(--line)',        label: 'Unknown' },
 };
+const __rcaTheme = (cls) => __RCA_CLASS_THEME[cls] || __RCA_CLASS_THEME.unknown;
+
+const __RCA_SECTION_META = [
+  { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>, color: 'var(--red)' },
+  { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>, color: 'var(--amber)' },
+  { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>, color: 'var(--blue)' },
+  { icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>, color: 'var(--green)' },
+];
 
 const __parseRCASections = (text) => {
   if (!text) return [];
-  // Split on lines that start with a number+dot (e.g. "1. What went wrong")
   const sections = [];
   const lines = text.split('\n');
   let current = null;
@@ -149,46 +155,89 @@ const __parseRCASections = (text) => {
     const match = line.match(/^(\d+)\.\s+(.+)/);
     if (match) {
       if (current) sections.push(current);
-      current = { heading: match[2], body: [] };
+      current = { num: parseInt(match[1], 10), heading: match[2], body: [] };
     } else if (current) {
       current.body.push(line);
-    } else {
-      // preamble before first section
-      sections.push({ heading: null, body: [line] });
+    } else if (line.trim()) {
+      sections.push({ num: 0, heading: null, body: [line] });
     }
   }
   if (current) sections.push(current);
   return sections;
 };
 
+const RCATab = ({ reports }) => {
+  if (!reports) return <LoadingState />;
+  if (reports.length === 0) return (
+    <div style={{ textAlign: 'center', padding: '80px 24px' }}>
+      <div style={{ width: 64, height: 64, borderRadius: 16, background: 'var(--surface-2)', border: '1px solid var(--line)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v3m0 3h.01"/>
+        </svg>
+      </div>
+      <h3 className="h3" style={{ marginBottom: 8 }}>No root cause reports yet</h3>
+      <p className="muted-2" style={{ fontSize: 14, maxWidth: 340, margin: '0 auto' }}>
+        Open any fix card and click <strong style={{ color: 'var(--text-2)' }}>Generate root cause</strong> to kick off a deep analysis.
+      </p>
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {reports.map(r => <RCACard key={`${r.org_id}_${r.message_id}`} report={r} />)}
+    </div>
+  );
+};
+
 const RCACard = ({ report }) => {
   const [expanded, setExpanded] = React.useState(true);
+  const theme = __rcaTheme(report.error_class);
   const date = report.created_at ? new Date(report.created_at).toLocaleString() : '—';
   const sections = __parseRCASections(report.analysis);
+
   return (
-    <div className="surface" style={{ overflow: 'hidden' }}>
-      <div onClick={() => setExpanded(!expanded)} style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span className="pill">{report.error_class || 'unknown'}</span>
-            <span className="mono muted" style={{ fontSize: 11 }}>{report.message_id}</span>
+    <div style={{ borderRadius: 12, overflow: 'hidden', border: `1px solid ${theme.line}`, background: 'var(--surface-1)' }}>
+      {/* Colored header band */}
+      <div style={{ background: theme.bg, borderBottom: `1px solid ${theme.line}`, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}
+           onClick={() => setExpanded(!expanded)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 8, background: 'rgba(0,0,0,0.25)', border: `1px solid ${theme.line}` }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={theme.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+            </svg>
+          </span>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: theme.color }}>{theme.label}</span>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{report.message_id}</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>{date}</div>
           </div>
-          <div className="muted" style={{ fontSize: 12 }}>{date}</div>
         </div>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ transition: 'transform 150ms', transform: expanded ? 'rotate(180deg)' : 'none' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
+             style={{ transition: 'transform 150ms', transform: expanded ? 'rotate(180deg)' : 'none', color: 'var(--text-3)', flexShrink: 0 }}>
           <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </div>
+
       {expanded && (
-        <div style={{ borderTop: '1px solid var(--line)', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {sections.map((s, i) => (
-            <div key={i} style={{ background: 'var(--surface-1)', border: '1px solid var(--line)', borderRadius: 8, padding: '12px 14px' }}>
-              {s.heading && (
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.heading}</div>
-              )}
-              <p style={{ fontSize: 13, lineHeight: 1.65, color: 'var(--text-2)', margin: 0, whiteSpace: 'pre-wrap' }}>
-                {s.body.join('\n').trim()}
-              </p>
+        <div style={{ padding: '16px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+          {sections.filter(s => s.heading).map((s, i) => {
+            const meta = __RCA_SECTION_META[i % __RCA_SECTION_META.length];
+            return (
+              <div key={i} style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '14px 16px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                  <span style={{ color: meta.color, display: 'flex', alignItems: 'center' }}>{meta.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{s.heading}</span>
+                </div>
+                <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text-2)', margin: 0 }}>
+                  {s.body.join('\n').trim()}
+                </p>
+              </div>
+            );
+          })}
+          {sections.filter(s => !s.heading && s.body.join('').trim()).map((s, i) => (
+            <div key={`pre-${i}`} style={{ gridColumn: '1 / -1', fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6 }}>
+              {s.body.join('\n').trim()}
             </div>
           ))}
         </div>
