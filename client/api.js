@@ -23,8 +23,9 @@ window.api.signUp = async ({ email, password }) => {
 };
 
 window.api.signOut = async () => {
-  await __delay(150);
-  // TODO: POST /api/auth/signout
+  window.session.setOrgId(null);
+  window.session.setUser(null);
+  location.hash = '#/signin';
   return { ok: true };
 };
 
