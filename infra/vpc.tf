@@ -74,6 +74,43 @@ resource "google_compute_route" "onprem" {
   priority            = 1000
 }
 
+# ── Firewall rules ────────────────────────────────────────────────────────────
+# Allow return traffic from the on-prem network back into the VPC (responses
+# to connections initiated by Cloud Run through the connector).
+resource "google_compute_firewall" "allow_onprem_ingress" {
+  name    = "deadlift-allow-onprem-ingress"
+  network = google_compute_network.vpc.name
+
+  direction     = "INGRESS"
+  source_ranges = [var.onprem_cidr]
+
+  allow {
+    protocol = "tcp"
+  }
+
+  allow {
+    protocol = "icmp"
+  }
+}
+
+# Allow egress from the VPC connector range to the on-prem network (belt-and-
+# suspenders — GCP allows all egress by default, but this makes intent explicit).
+resource "google_compute_firewall" "allow_onprem_egress" {
+  name    = "deadlift-allow-onprem-egress"
+  network = google_compute_network.vpc.name
+
+  direction          = "EGRESS"
+  destination_ranges = [var.onprem_cidr]
+
+  allow {
+    protocol = "tcp"
+  }
+
+  allow {
+    protocol = "icmp"
+  }
+}
+
 # ── VPC Access Connector ──────────────────────────────────────────────────────
 # Gives Cloud Run egress into the VPC (and therefore the VPN tunnel).
 
