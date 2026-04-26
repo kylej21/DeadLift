@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -138,3 +140,45 @@ def status(job_id: str):
         "message": job.message,
         "client_id": job.client_id,
     }
+
+
+RCA_DIR = Path(__file__).parent / "rca_files"
+RCA_DIR.mkdir(exist_ok=True)
+
+
+class RCACreateRequest(BaseModel):
+    org_id: str
+    message_id: str
+    error_class: str
+    raw_payload: str
+    fixed_payload: str
+    analysis: str
+
+
+@app.post("/rca/create")
+def rca_create(req: RCACreateRequest):
+    filename = f"{req.org_id}_{req.message_id}.json"
+    path = RCA_DIR / filename
+    data = {
+        "org_id": req.org_id,
+        "message_id": req.message_id,
+        "error_class": req.error_class,
+        "raw_payload": req.raw_payload,
+        "fixed_payload": req.fixed_payload,
+        "analysis": req.analysis,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    path.write_text(json.dumps(data, indent=2))
+    log.info("rca: wrote %s", filename)
+    return {"ok": True, "file": filename}
+
+
+@app.get("/rca/get/{org_id}")
+def rca_get(org_id: str):
+    reports = []
+    for path in sorted(RCA_DIR.glob(f"{org_id}_*.json"), reverse=True):
+        try:
+            reports.append(json.loads(path.read_text()))
+        except Exception as exc:
+            log.warning("rca: failed to read %s: %s", path.name, exc)
+    return reports

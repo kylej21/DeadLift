@@ -14,6 +14,7 @@ import (
 	"proxy/internal/graphrag"
 	"proxy/internal/mcp"
 	"proxy/internal/onboard"
+	"proxy/internal/rca"
 	"proxy/internal/store"
 	"proxy/internal/tasks"
 	"proxy/internal/worker"
@@ -94,6 +95,8 @@ func main() {
 		MCPClient: mcpClient,
 	}
 
+	rcaHandler := rca.New(st, mcpClient, os.Getenv("GRAPHRAG_SERVER_URL"))
+
 	mux := http.NewServeMux()
 
 	// Onboarding & auth
@@ -111,6 +114,10 @@ func main() {
 	mux.HandleFunc("GET /api/batches", bh.HandleList)
 	mux.HandleFunc("POST /api/batches/{error_class}/approve", bh.HandleApprove)
 	mux.HandleFunc("POST /api/batches/{error_class}/deny", bh.HandleDeny)
+
+	// Root cause analysis
+	mux.HandleFunc("POST /api/rca/{task_id}", rcaHandler.HandleGenerate)
+	mux.HandleFunc("GET /api/rca", rcaHandler.HandleList)
 
 	// GraphRAG context ingestion
 	mux.HandleFunc("POST /api/graphrag/onboard", gr.HandleOnboard)

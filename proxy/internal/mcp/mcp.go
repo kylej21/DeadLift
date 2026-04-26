@@ -31,6 +31,63 @@ func New(serverURL, apiKey, model string) *Client {
 	}
 }
 
+const rcaSystemPrompt = `You are a root cause analysis expert for Pub/Sub pipeline failures.
+
+Given a failed message and its repaired version, produce a detailed root cause analysis in plain text covering:
+1. What went wrong and why
+2. Which upstream system or code path likely caused this
+3. How the fix addresses the root cause
+4. Recommendations to prevent recurrence
+
+Be specific and technical. Reference field names and values from the payload.`
+
+func (c *Client) CallRCA(ctx context.Context, orgID, messageID, rawPayload, fixedPayload, errorClass string) (string, error) {
+	userMsg := fmt.Sprintf(
+		"Organization: %s\nMessage ID: %s\nError class: %s\n\nOriginal failed payload:\n%s\n\nRepaired payload:\n%s\n\nProvide a thorough root cause analysis.",
+		orgID, messageID, errorClass, rawPayload, fixedPayload,
+	)
+
+	body, _ := json.Marshal(map[string]any{
+		"model": c.model,
+		"messages": []map[string]string{
+			{"role": "system", "content": rcaSystemPrompt},
+			{"role": "user", "content": userMsg},
+		},
+		"temperature": 0.2,
+		"max_tokens":  2048,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.serverURL+"/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("vllm rca request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("vllm HTTP %d: %s", resp.StatusCode, b)
+	}
+
+	var cr struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(b, &cr); err != nil || len(cr.Choices) == 0 {
+		return "", fmt.Errorf("vllm rca parse: %w", err)
+	}
+	return cr.Choices[0].Message.Content, nil
+}
+
 const systemPrompt = `You are a Pub/Sub dead-letter queue repair agent. A message failed delivery and needs to be diagnosed and fixed.
 
 Analyze the raw message payload using your available tools to understand the expected schema, then return a JSON object with exactly these two fields:
